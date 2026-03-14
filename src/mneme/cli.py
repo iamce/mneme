@@ -179,7 +179,15 @@ def handle_consolidate(args: argparse.Namespace) -> int:
 
     print(f"dry_run: {str(result['dry_run']).lower()}")
     print(f"scanned_captures: {result['scanned_capture_count']}")
+    print(f"thread_merge_count: {result['thread_merge_count']}")
     print(f"candidate_count: {result['candidate_count']}")
+
+    for merge in result["thread_merges"]:
+        shared_terms = ", ".join(merge["shared_terms"]) if merge["shared_terms"] else "none"
+        print(
+            f"- merge_thread: {merge['duplicate_thread_title']} -> {merge['canonical_thread_title']} "
+            f"({merge['reason']}; shared: {shared_terms})"
+        )
 
     for candidate in result["candidates"]:
         print(
@@ -188,6 +196,7 @@ def handle_consolidate(args: argparse.Namespace) -> int:
         )
 
     if not args.dry_run:
+        print(f"merged_threads: {result['merged_thread_count']}")
         print(f"created_threads: {result['created_thread_count']}")
         print(f"updated_threads: {result['updated_thread_count']}")
         if result.get("artifact_id"):
