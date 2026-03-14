@@ -43,6 +43,8 @@ Built-in agents:
 - `reflect`: pattern and blind-spot oriented
 - `plan`: next-step and tradeoff oriented
 
+See [ROADMAP.md](ROADMAP.md) for current milestones and sequencing.
+
 ## Current Commands
 
 Install the package in editable mode:
