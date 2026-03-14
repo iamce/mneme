@@ -14,7 +14,9 @@ from .tools import (
     consolidate_recent_captures_tool,
     build_review_summary,
     create_capture_tool,
+    get_artifact_tool,
     get_thread_bundle_tool,
+    list_artifacts_tool,
     link_evidence_tool,
     list_threads_tool,
     propose_thread_tool,
@@ -97,6 +99,32 @@ def consolidate_recent_captures(
     """Consolidate recent unlinked captures into threads, states, and evidence."""
     with managed_connection() as conn:
         return consolidate_recent_captures_tool(conn, days=days, limit=limit, dry_run=dry_run)
+
+
+@mcp.tool()
+def list_artifacts(
+    target_type: str | None = None,
+    artifact_type: str | None = None,
+    model: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """List recent artifacts with optional filters."""
+    with managed_connection() as conn:
+        rows = list_artifacts_tool(
+            conn,
+            target_type=target_type,
+            artifact_type=artifact_type,
+            model=model,
+            limit=limit,
+        )
+    return {"artifacts": rows}
+
+
+@mcp.tool()
+def get_artifact(artifact_id: str) -> dict[str, Any]:
+    """Fetch one artifact with parsed content and evidence."""
+    with managed_connection() as conn:
+        return get_artifact_tool(conn, artifact_id=artifact_id)
 
 
 @mcp.tool()

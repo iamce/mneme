@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
+from .artifacts import store_consolidation_run_artifact
 from .db import create_artifact
 from .memory import create_thread, link_evidence, record_thread_state, update_thread
 from .thread_merges import (
@@ -239,15 +240,32 @@ def consolidate_recent_captures(
         merge_summary=_merge_thread_summary,
     )
     if not plan.candidates:
+        text_output = _render_consolidation_report(plan, merged_threads, [], 0, 0)
+        artifact_id = store_consolidation_run_artifact(
+            conn,
+            days=days,
+            limit=limit,
+            scanned_capture_count=plan.scanned_capture_count,
+            eligible_capture_count=plan.eligible_capture_count,
+            thread_merges=merged_threads,
+            candidate_count=len(plan.candidates),
+            created_thread_count=0,
+            updated_thread_count=0,
+            state_count=0,
+            consolidated=[],
+            skipped=[dict(row) for row in plan.skipped],
+            text_output=text_output,
+        )
         result.update(
             {
+                "artifact_id": artifact_id,
                 "merged_thread_count": len(merged_threads),
                 "thread_merges": merged_threads,
                 "created_thread_count": 0,
                 "updated_thread_count": 0,
                 "state_count": 0,
                 "consolidated": [],
-                "summary": _render_consolidation_report(plan, merged_threads, [], 0, 0),
+                "summary": text_output,
             }
         )
         return result
@@ -329,33 +347,22 @@ def consolidate_recent_captures(
         created_count,
         updated_count,
     )
-    artifact_id = create_artifact(
+    artifact_id = store_consolidation_run_artifact(
         conn,
-        artifact_type="summary",
-        target_type="system",
-        target_id=None,
-        model="local-consolidation",
-        content={
-            "days": days,
-            "limit": limit,
-            "merged_thread_count": len(merged_threads),
-            "thread_merges": merged_threads,
-            "created_thread_count": created_count,
-            "updated_thread_count": updated_count,
-            "consolidated": consolidated,
-            "skipped": [dict(row) for row in plan.skipped],
-        },
+        days=days,
+        limit=limit,
+        scanned_capture_count=plan.scanned_capture_count,
+        eligible_capture_count=plan.eligible_capture_count,
+        thread_merges=merged_threads,
+        candidate_count=len(plan.candidates),
+        created_thread_count=created_count,
+        updated_thread_count=updated_count,
+        state_count=len(consolidated),
+        consolidated=consolidated,
+        skipped=[dict(row) for row in plan.skipped],
         text_output=text_output,
+        evidence_capture_ids=processed_capture_ids,
     )
-    for capture_id in processed_capture_ids:
-        link_evidence(
-            conn,
-            subject_type="artifact",
-            subject_id=artifact_id,
-            capture_id=capture_id,
-            relation="supports",
-            confidence=0.6,
-        )
 
     result.update(
         {
