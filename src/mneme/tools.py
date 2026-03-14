@@ -15,33 +15,15 @@ from .db import (
     domain_activity,
     insert_capture,
     recent_captures,
-    recent_threads,
-    search_captures,
 )
 from .memory import create_thread, get_thread_bundle, link_evidence, list_threads, record_thread_state
+from .retrieval import (
+    STOPWORDS,
+    build_context_packet as build_context_packet_impl,
+    render_capture,
+    render_context_packet as render_context_packet_impl,
+)
 from .triggered_consolidation import run_triggered_consolidation
-
-
-STOPWORDS = {
-    "about",
-    "after",
-    "again",
-    "been",
-    "from",
-    "have",
-    "into",
-    "just",
-    "keep",
-    "keeps",
-    "that",
-    "them",
-    "this",
-    "what",
-    "when",
-    "with",
-    "would",
-    "your",
-}
 
 
 @dataclass(frozen=True)
@@ -404,94 +386,11 @@ def get_artifact_tool(conn: Any, *, artifact_id: str) -> dict[str, Any]:
 
 
 def build_context_packet(conn: Any, question: str, *, days: int = 14) -> dict[str, Any]:
-    matches = search_captures(conn, question, limit=6)
-    recent = recent_captures(conn, limit=4, days=days)
-    used_recent_fallback = False
-    if not matches:
-        matches = recent_captures(conn, limit=6, days=days)
-        used_recent_fallback = True
-    threads = recent_threads(conn, limit=5)
-    activity = domain_activity(conn, days=days)
-
-    return {
-        "question": question,
-        "relevant_captures": [
-            {
-                "id": row["id"],
-                "created_at": row["created_at"],
-                "domains": row["domains"] or "",
-                "raw_text": row["raw_text"],
-            }
-            for row in matches
-        ],
-        "recent_captures": [
-            {
-                "id": row["id"],
-                "created_at": row["created_at"],
-                "domains": row["domains"] or "",
-                "raw_text": row["raw_text"],
-            }
-            for row in recent
-        ],
-        "threads": [
-            {
-                "title": row["title"],
-                "kind": row["kind"],
-                "status": row["status"],
-                "salience": row["salience"],
-                "last_seen_at": row["last_seen_at"],
-            }
-            for row in threads
-        ],
-        "recent_domain_activity": [
-            {"name": row["name"], "capture_count": row["capture_count"]}
-            for row in activity[:5]
-        ],
-        "used_recent_fallback": used_recent_fallback,
-    }
+    return build_context_packet_impl(conn, question, days=days)
 
 
 def render_context_packet(context_packet: dict[str, Any]) -> str:
-    lines = [f"Question: {context_packet['question']}", ""]
-
-    matches = context_packet["relevant_captures"]
-    if matches:
-        title = (
-            "Relevant captures (recent fallback):"
-            if context_packet["used_recent_fallback"]
-            else "Relevant captures:"
-        )
-        lines.append(title)
-        for row in matches:
-            lines.append(render_capture(row))
-        lines.append("")
-    else:
-        lines.append("Relevant captures: none")
-        lines.append("")
-
-    threads = context_packet["threads"]
-    if threads:
-        lines.append("Threads:")
-        for row in threads:
-            lines.append(
-                f"- {row['title']} [{row['kind']}] status={row['status']} salience={row['salience']:.2f}"
-            )
-        lines.append("")
-
-    activity = context_packet["recent_domain_activity"]
-    if activity:
-        lines.append("Recent domain activity:")
-        for row in activity:
-            lines.append(f"- {row['name']}: {row['capture_count']} capture(s)")
-        lines.append("")
-
-    recent = context_packet["recent_captures"]
-    if recent:
-        lines.append("Recent captures:")
-        for row in recent:
-            lines.append(render_capture(row))
-
-    return "\n".join(lines).strip()
+    return render_context_packet_impl(context_packet)
 
 
 def build_review_summary(conn: Any, *, days: int) -> tuple[str, dict[str, Any], str]:
@@ -537,8 +436,3 @@ def extract_top_terms(texts: list[str], *, limit: int = 8) -> list[str]:
                 tokens.append(token)
     counts = Counter(tokens)
     return [word for word, _ in counts.most_common(limit)]
-
-
-def render_capture(row: Any) -> str:
-    domains = row["domains"] or "none"
-    return f"- [{row['id']}] {row['created_at']} | domains: {domains}\n  {row['raw_text']}"
