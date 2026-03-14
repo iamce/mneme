@@ -14,6 +14,7 @@ from .db import (
 from .tools import (
     build_context_packet,
     build_review_summary,
+    consolidate_recent_captures_tool,
     create_capture_tool,
     render_context_packet,
     store_chat_artifact,
@@ -52,6 +53,15 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("--days", type=int, default=7)
     review_parser.set_defaults(handler=handle_review)
 
+    consolidate_parser = subparsers.add_parser(
+        "consolidate",
+        help="Consolidate recent captures into threads, states, and evidence.",
+    )
+    consolidate_parser.add_argument("--days", type=int, default=7)
+    consolidate_parser.add_argument("--limit", type=int, default=25)
+    consolidate_parser.add_argument("--dry-run", action="store_true")
+    consolidate_parser.set_defaults(handler=handle_consolidate)
+
     return parser
 
 
@@ -87,6 +97,8 @@ def handle_capture(args: argparse.Namespace) -> int:
     print(f"[{record.id}] stored in {path}")
     print(f"domains: {domain_part}")
     return 0
+
+
 def handle_ask(args: argparse.Namespace) -> int:
     _, conn = ensure_db(args.db)
     context_packet = build_context_packet(conn, args.question)
@@ -151,6 +163,35 @@ def handle_review(args: argparse.Namespace) -> int:
     )
     conn.close()
     print(text_output)
+    return 0
+
+
+def handle_consolidate(args: argparse.Namespace) -> int:
+    _, conn = ensure_db(args.db)
+    result = consolidate_recent_captures_tool(
+        conn,
+        days=args.days,
+        limit=args.limit,
+        dry_run=args.dry_run,
+    )
+    conn.close()
+
+    print(f"dry_run: {str(result['dry_run']).lower()}")
+    print(f"scanned_captures: {result['scanned_capture_count']}")
+    print(f"candidate_count: {result['candidate_count']}")
+
+    for candidate in result["candidates"]:
+        print(
+            f"- {candidate['action']}: {candidate['title']} "
+            f"({len(candidate['capture_ids'])} capture(s))"
+        )
+
+    if not args.dry_run:
+        print(f"created_threads: {result['created_thread_count']}")
+        print(f"updated_threads: {result['updated_thread_count']}")
+        if result.get("artifact_id"):
+            print(f"artifact_id: {result['artifact_id']}")
+
     return 0
 
 

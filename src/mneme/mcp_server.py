@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from .db import connect, default_db_path, initialize
 from .tools import (
     build_context_packet,
+    consolidate_recent_captures_tool,
     build_review_summary,
     create_capture_tool,
     get_thread_bundle_tool,
@@ -85,6 +86,17 @@ def review_memory(days: int = 7) -> dict[str, Any]:
         "summary": text_output,
         "content": content,
     }
+
+
+@mcp.tool()
+def consolidate_recent_captures(
+    days: int = 7,
+    limit: int = 25,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Consolidate recent unlinked captures into threads, states, and evidence."""
+    with managed_connection() as conn:
+        return consolidate_recent_captures_tool(conn, days=days, limit=limit, dry_run=dry_run)
 
 
 @mcp.tool()
