@@ -10,10 +10,14 @@ from .memory import create_thread, link_evidence, record_thread_state
 
 
 STOPWORDS = {
+    "and",
     "about",
+    "are",
     "after",
     "again",
     "been",
+    "few",
+    "for",
     "from",
     "have",
     "into",
@@ -21,6 +25,7 @@ STOPWORDS = {
     "keep",
     "keeps",
     "that",
+    "the",
     "them",
     "this",
     "what",
@@ -111,6 +116,17 @@ AFFECT_CUES = {
 }
 NOW_CUES = {"deadline", "overdue", "today", "tomorrow", "urgent"}
 SOON_CUES = {"next", "soon", "week"}
+MATCH_NOISE = (
+    STOPWORDS
+    | NOW_CUES
+    | SOON_CUES
+    | {token for tokens in KIND_CUES.values() for token in tokens}
+    | {token for tokens in PRESSURE_CUES.values() for token in tokens}
+    | {token for tokens in POSTURE_CUES.values() for token in tokens}
+    | {token for tokens in MOMENTUM_CUES.values() for token in tokens}
+    | {token for tokens in AFFECT_CUES.values() for token in tokens}
+    | {"due", "latest", "missing", "note", "notes", "recent"}
+)
 
 
 @dataclass(frozen=True)
@@ -129,6 +145,12 @@ class CaptureInput:
 class ThreadMatch:
     id: str
     title: str
+
+
+@dataclass(frozen=True)
+class ThreadMatchResult:
+    match: ThreadMatch | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -310,37 +332,57 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
     candidates: list[ConsolidationCandidate] = []
     for domain, rows in grouped.items():
         rows = sorted(rows, key=lambda row: row.created_at, reverse=True)
-        if len(rows) < 2 and not any(_is_urgent(row.raw_text) for row in rows):
-            skipped.append(
-                {
-                    "domain": domain,
-                    "capture_ids": [row.id for row in rows],
-                    "reason": "insufficient_signal",
-                }
-            )
-            continue
+        clusters, cluster_skips = _cluster_domain_captures(rows, domain=domain)
+        skipped.extend(cluster_skips)
 
-        topic_terms = _topic_terms(rows, domain=domain)
-        kind = _infer_kind(rows, domain=domain)
-        title = _build_title(domain, kind=kind, topic_terms=topic_terms)
-        summary = _build_summary(rows, domain=domain)
-        confidence = round(min(0.9, 0.45 + (len(rows) * 0.1) + (len(topic_terms) * 0.05)), 2)
-        salience = _infer_salience(rows)
-        match = _match_existing_thread(conn, domain=domain, title=title, topic_terms=topic_terms, kind=kind)
-        state = _infer_state(rows, confidence=confidence)
-        candidates.append(
-            ConsolidationCandidate(
+        for cluster in clusters:
+            topic_terms = _topic_terms(cluster, domain=domain)
+            if not topic_terms:
+                skipped.append(
+                    {
+                        "domain": domain,
+                        "capture_ids": [row.id for row in cluster],
+                        "reason": "ambiguous_topic",
+                    }
+                )
+                continue
+
+            kind = _infer_kind(cluster, domain=domain)
+            title = _build_title(domain, kind=kind, topic_terms=topic_terms)
+            summary = _build_summary(cluster, domain=domain)
+            confidence = round(min(0.9, 0.45 + (len(cluster) * 0.1) + (len(topic_terms) * 0.05)), 2)
+            salience = _infer_salience(cluster)
+            match_result = _match_existing_thread(
+                conn,
                 domain=domain,
                 title=title,
+                topic_terms=topic_terms,
                 kind=kind,
-                summary=summary,
-                capture_ids=tuple(row.id for row in rows),
-                state=state,
-                salience=salience,
-                confidence=confidence,
-                match=match,
             )
-        )
+            if match_result.reason is not None:
+                skipped.append(
+                    {
+                        "domain": domain,
+                        "capture_ids": [row.id for row in cluster],
+                        "reason": match_result.reason,
+                    }
+                )
+                continue
+
+            state = _infer_state(cluster, confidence=confidence)
+            candidates.append(
+                ConsolidationCandidate(
+                    domain=domain,
+                    title=title,
+                    kind=kind,
+                    summary=summary,
+                    capture_ids=tuple(row.id for row in cluster),
+                    state=state,
+                    salience=salience,
+                    confidence=confidence,
+                    match=match_result.match,
+                )
+            )
 
     return ConsolidationPlan(
         days=days,
@@ -409,13 +451,14 @@ def _load_recent_unlinked_captures(conn: Any, *, days: int, limit: int) -> list[
 
 def _topic_terms(captures: list[CaptureInput], *, domain: str, limit: int = 3) -> list[str]:
     counts: dict[str, int] = defaultdict(int)
-    domain_token = domain.lower()
+    first_seen: dict[str, int] = {}
+    index = 0
     for capture in captures:
-        for token in _tokens(capture.raw_text):
-            if token == domain_token or token in STOPWORDS:
-                continue
+        for token in _signal_token_list(capture.raw_text, domain=domain):
             counts[token] += 1
-    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            first_seen.setdefault(token, index)
+            index += 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], first_seen[item[0]], item[0]))
     return [term for term, _count in ordered[:limit]]
 
 
@@ -527,39 +570,128 @@ def _match_existing_thread(
     title: str,
     topic_terms: list[str],
     kind: str,
-) -> ThreadMatch | None:
+) -> ThreadMatchResult:
     rows = conn.execute(
         """
-        SELECT t.id, t.title, t.canonical_summary, t.kind
+        SELECT
+          t.id,
+          t.title,
+          t.canonical_summary,
+          t.kind,
+          GROUP_CONCAT(c.raw_text, ' ') AS evidence_text
         FROM threads AS t
         JOIN thread_domains AS td ON td.thread_id = t.id
         JOIN domains AS d ON d.id = td.domain_id
+        LEFT JOIN evidence_links AS el
+          ON el.subject_type = 'thread' AND el.subject_id = t.id
+        LEFT JOIN captures AS c ON c.id = el.capture_id
         WHERE LOWER(d.name) = ?
           AND t.status != 'closed'
+        GROUP BY t.id, t.title, t.canonical_summary, t.kind
         ORDER BY t.last_seen_at DESC
         """,
         (domain.lower(),),
     ).fetchall()
     if not rows:
-        return None
+        return ThreadMatchResult()
 
     lowered_title = title.lower()
     for row in rows:
         if row["title"].lower() == lowered_title:
-            return ThreadMatch(id=row["id"], title=row["title"])
+            return ThreadMatchResult(match=ThreadMatch(id=row["id"], title=row["title"]))
 
-    topic_token_set = set(topic_terms)
-    best_match: ThreadMatch | None = None
-    best_score = 0.0
+    topic_token_set = {_normalize_match_token(term) for term in topic_terms}
+    if not topic_token_set:
+        return ThreadMatchResult()
+
+    scored_matches: list[tuple[float, ThreadMatch]] = []
     for row in rows:
-        haystack = set(_tokens(f"{row['title']} {row['canonical_summary']}"))
-        score = float(len(topic_token_set & haystack))
+        haystack = _normalized_signal_tokens(
+            f"{row['title']} {row['canonical_summary']} {row['evidence_text'] or ''}",
+            domain=domain,
+        )
+        shared = topic_token_set & haystack
+        if not shared:
+            continue
+
+        overlap = len(shared) / len(topic_token_set)
+        if len(shared) < 2 and overlap < 0.6:
+            continue
+
+        score = overlap + min(0.25, len(shared) * 0.1)
         if row["kind"] == kind:
-            score += 0.25
-        if score >= 1.0 and score > best_score:
-            best_score = score
-            best_match = ThreadMatch(id=row["id"], title=row["title"])
-    return best_match
+            score += 0.15
+        scored_matches.append((score, ThreadMatch(id=row["id"], title=row["title"])))
+
+    if not scored_matches:
+        return ThreadMatchResult()
+
+    scored_matches.sort(key=lambda item: item[0], reverse=True)
+    if len(scored_matches) > 1 and abs(scored_matches[0][0] - scored_matches[1][0]) < 0.15:
+        return ThreadMatchResult(reason="ambiguous_match")
+    return ThreadMatchResult(match=scored_matches[0][1])
+
+
+def _cluster_domain_captures(
+    captures: list[CaptureInput],
+    *,
+    domain: str,
+) -> tuple[list[list[CaptureInput]], list[dict[str, Any]]]:
+    if len(captures) <= 1:
+        if captures and not _is_urgent(captures[0].raw_text):
+            return [], [
+                {
+                    "domain": domain,
+                    "capture_ids": [captures[0].id],
+                    "reason": "insufficient_signal",
+                }
+            ]
+        return [captures] if captures else [], []
+
+    adjacency: dict[int, set[int]] = {index: set() for index in range(len(captures))}
+    for left_index, left in enumerate(captures):
+        left_tokens = _normalized_signal_tokens(left.raw_text, domain=domain)
+        for right_index in range(left_index + 1, len(captures)):
+            right_tokens = _normalized_signal_tokens(captures[right_index].raw_text, domain=domain)
+            shared = left_tokens & right_tokens
+            if not shared:
+                continue
+            overlap = len(shared) / max(1, min(len(left_tokens), len(right_tokens)))
+            if len(shared) >= 2 or overlap >= 0.5:
+                adjacency[left_index].add(right_index)
+                adjacency[right_index].add(left_index)
+
+    visited: set[int] = set()
+    clusters: list[list[CaptureInput]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for index in range(len(captures)):
+        if index in visited:
+            continue
+
+        stack = [index]
+        component: list[CaptureInput] = []
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            component.append(captures[current])
+            stack.extend(sorted(adjacency[current] - visited))
+
+        component.sort(key=lambda row: row.created_at, reverse=True)
+        if len(component) == 1 and not _is_urgent(component[0].raw_text):
+            skipped.append(
+                {
+                    "domain": domain,
+                    "capture_ids": [component[0].id],
+                    "reason": "low_overlap",
+                }
+            )
+            continue
+        clusters.append(component)
+
+    return clusters, skipped
 
 
 def _attach_new_thread_evidence(conn: Any, *, thread_id: str, capture_ids: tuple[str, ...]) -> None:
@@ -625,6 +757,29 @@ def _combined_tokens(captures: list[CaptureInput]) -> list[str]:
 
 def _tokens(text: str) -> list[str]:
     return re.findall(r"[a-zA-Z]{3,}", text.lower())
+
+
+def _signal_tokens(text: str, *, domain: str) -> set[str]:
+    return set(_signal_token_list(text, domain=domain))
+
+
+def _normalized_signal_tokens(text: str, *, domain: str) -> set[str]:
+    return {_normalize_match_token(token) for token in _signal_token_list(text, domain=domain)}
+
+
+def _signal_token_list(text: str, *, domain: str) -> list[str]:
+    domain_token = domain.lower()
+    return [token for token in _tokens(text) if token != domain_token and token not in MATCH_NOISE]
+
+
+def _normalize_match_token(token: str) -> str:
+    if token.endswith("ies") and len(token) > 4:
+        return f"{token[:-3]}y"
+    if token.endswith("es") and len(token) > 4 and token[-3] not in {"a", "e", "i", "o", "u"}:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 4 and not token.endswith("ss"):
+        return token[:-1]
+    return token
 
 
 def _contains_any(tokens: list[str], choices: set[str]) -> bool:

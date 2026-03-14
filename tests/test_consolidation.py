@@ -102,6 +102,89 @@ class ConsolidationTests(unittest.TestCase):
         self.assertEqual(state_count, 2)
         self.assertEqual(thread_evidence_count, 3)
 
+    def test_domain_group_is_split_into_distinct_clusters(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Taxes are overdue and I need to file them today.",
+            domains=["Money"],
+        )
+        insert_capture(
+            self.conn,
+            raw_text="Still overdue on taxes and missing a few receipts.",
+            domains=["Money"],
+        )
+        insert_capture(
+            self.conn,
+            raw_text="Car insurance renewal is due tomorrow.",
+            domains=["Money"],
+        )
+        insert_capture(
+            self.conn,
+            raw_text="Still need the insurance card for the renewal paperwork.",
+            domains=["Money"],
+        )
+
+        preview = consolidate_recent_captures(self.conn, days=30, limit=10, dry_run=True)
+
+        self.assertEqual(preview["candidate_count"], 2)
+        titles = {candidate["title"] for candidate in preview["candidates"]}
+        self.assertEqual(titles, {"Money: taxes and receipts", "Money: insurance and renewal"})
+
+        applied = consolidate_recent_captures(self.conn, days=30, limit=10)
+        self.assertEqual(applied["created_thread_count"], 2)
+        thread_count = self.conn.execute("SELECT COUNT(*) AS count FROM threads").fetchone()["count"]
+        self.assertEqual(thread_count, 2)
+
+    def test_low_overlap_singleton_is_skipped_instead_of_forcing_domain_candidate(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Taxes are overdue and I need to file them today.",
+            domains=["Money"],
+        )
+        insert_capture(
+            self.conn,
+            raw_text="Still overdue on taxes and missing a few receipts.",
+            domains=["Money"],
+        )
+        leftover = insert_capture(
+            self.conn,
+            raw_text="I should compare a few savings account options.",
+            domains=["Money"],
+        )
+
+        preview = consolidate_recent_captures(self.conn, days=30, limit=10, dry_run=True)
+
+        self.assertEqual(preview["candidate_count"], 1)
+        self.assertIn(
+            {
+                "domain": "Money",
+                "capture_ids": [leftover.id],
+                "reason": "low_overlap",
+            },
+            preview["skipped"],
+        )
+
+    def test_generic_urgent_capture_without_topic_terms_is_skipped_as_ambiguous(self) -> None:
+        capture = insert_capture(
+            self.conn,
+            raw_text="Need to pay this today.",
+            domains=["Money"],
+        )
+
+        preview = consolidate_recent_captures(self.conn, days=30, limit=10, dry_run=True)
+
+        self.assertEqual(preview["candidate_count"], 0)
+        self.assertEqual(
+            preview["skipped"],
+            [
+                {
+                    "domain": "Money",
+                    "capture_ids": [capture.id],
+                    "reason": "ambiguous_topic",
+                }
+            ],
+        )
+
     def test_apply_without_candidates_returns_zero_counts(self) -> None:
         result = consolidate_recent_captures(self.conn, days=30, limit=10)
 
