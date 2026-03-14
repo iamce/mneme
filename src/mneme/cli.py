@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 import sys
 from pathlib import Path
 
 from .agents import default_agent_name
+from .artifacts import store_chat_artifact, store_review_artifact
 from .ai import answer_question, default_model_name, default_provider_name, provider_ready, resolve_ai_config
 from .db import (
     connect,
@@ -17,9 +19,9 @@ from .tools import (
     build_review_summary,
     consolidate_recent_captures_tool,
     create_capture_tool,
+    get_artifact_tool,
+    list_artifacts_tool,
     render_context_packet,
-    store_chat_artifact,
-    store_review_artifact,
 )
 
 
@@ -53,6 +55,17 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser = subparsers.add_parser("review", help="Create a deterministic review summary.")
     review_parser.add_argument("--days", type=int, default=7)
     review_parser.set_defaults(handler=handle_review)
+
+    artifacts_parser = subparsers.add_parser("artifacts", help="List recent stored artifacts.")
+    artifacts_parser.add_argument("--target-type", default=None)
+    artifacts_parser.add_argument("--artifact-type", default=None)
+    artifacts_parser.add_argument("--model", default=None)
+    artifacts_parser.add_argument("--limit", type=int, default=10)
+    artifacts_parser.set_defaults(handler=handle_artifacts)
+
+    artifact_parser = subparsers.add_parser("artifact", help="Inspect one stored artifact.")
+    artifact_parser.add_argument("artifact_id")
+    artifact_parser.set_defaults(handler=handle_artifact)
 
     consolidate_parser = subparsers.add_parser(
         "consolidate",
@@ -157,13 +170,60 @@ def handle_review(args: argparse.Namespace) -> int:
     text_output, content, artifact_type = build_review_summary(conn, days=args.days)
     store_review_artifact(
         conn,
-        days=args.days,
         text_output=text_output,
         content=content,
         artifact_type=artifact_type,
     )
     conn.close()
     print(text_output)
+    return 0
+
+
+def handle_artifacts(args: argparse.Namespace) -> int:
+    _, conn = ensure_db(args.db)
+    rows = list_artifacts_tool(
+        conn,
+        target_type=args.target_type,
+        artifact_type=args.artifact_type,
+        model=args.model,
+        limit=args.limit,
+    )
+    conn.close()
+
+    for row in rows:
+        print(
+            f"[{row['id']}] {row['created_at']} "
+            f"type={row['artifact_type']} target={row['target_type']} "
+            f"model={row['model']} evidence={row['evidence_count']}"
+        )
+    return 0
+
+
+def handle_artifact(args: argparse.Namespace) -> int:
+    _, conn = ensure_db(args.db)
+    try:
+        artifact = get_artifact_tool(conn, artifact_id=args.artifact_id)
+    except ValueError as exc:
+        conn.close()
+        raise SystemExit(str(exc)) from exc
+    conn.close()
+
+    print(f"id: {artifact['id']}")
+    print(f"created_at: {artifact['created_at']}")
+    print(f"artifact_type: {artifact['artifact_type']}")
+    print(f"target_type: {artifact['target_type']}")
+    print(f"target_id: {artifact['target_id'] or 'none'}")
+    print(f"model: {artifact['model']}")
+    print("content:")
+    print(json.dumps(artifact["content"], indent=2, sort_keys=True))
+    if artifact["text_output"]:
+        print("text_output:")
+        print(artifact["text_output"])
+    if artifact["evidence"]:
+        print("evidence:")
+        for row in artifact["evidence"]:
+            print(f"- [{row['capture_id']}] {row['created_at']} | relation: {row['relation']}")
+            print(f"  {row['raw_text']}")
     return 0
 
 

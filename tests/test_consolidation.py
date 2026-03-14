@@ -194,7 +194,7 @@ class ConsolidationTests(unittest.TestCase):
         self.assertEqual(result["updated_thread_count"], 0)
         self.assertEqual(result["state_count"], 0)
         self.assertEqual(result["consolidated"], [])
-        self.assertNotIn("artifact_id", result)
+        self.assertTrue(result["artifact_id"].startswith("art_"))
 
     def test_existing_overlap_is_inspected_and_merged_before_matching_new_capture(self) -> None:
         overdue = insert_capture(

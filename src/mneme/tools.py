@@ -5,10 +5,13 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from .artifacts import (
+    get_artifact,
+    list_artifacts,
+)
 from .consolidation import consolidate_recent_captures
 from .db import (
     CaptureRecord,
-    create_artifact,
     domain_activity,
     insert_capture,
     recent_captures,
@@ -93,6 +96,28 @@ TOOL_REGISTRY = {
                 "limit": {"type": "integer", "minimum": 1},
                 "dry_run": {"type": "boolean"},
             },
+        },
+    ),
+    "list_artifacts": ToolSpec(
+        name="list_artifacts",
+        description="List recent stored artifacts with optional filters.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "target_type": {"type": "string"},
+                "artifact_type": {"type": "string"},
+                "model": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1},
+            },
+        },
+    ),
+    "get_artifact": ToolSpec(
+        name="get_artifact",
+        description="Fetch one artifact with parsed content and linked evidence.",
+        input_schema={
+            "type": "object",
+            "properties": {"artifact_id": {"type": "string"}},
+            "required": ["artifact_id"],
         },
     ),
     "list_threads": ToolSpec(
@@ -301,6 +326,27 @@ def consolidate_recent_captures_tool(
     return consolidate_recent_captures(conn, days=days, limit=limit, dry_run=dry_run)
 
 
+def list_artifacts_tool(
+    conn: Any,
+    *,
+    target_type: str | None = None,
+    artifact_type: str | None = None,
+    model: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    return list_artifacts(
+        conn,
+        target_type=target_type,
+        artifact_type=artifact_type,
+        model=model,
+        limit=limit,
+    )
+
+
+def get_artifact_tool(conn: Any, *, artifact_id: str) -> dict[str, Any]:
+    return get_artifact(conn, artifact_id)
+
+
 def build_context_packet(conn: Any, question: str, *, days: int = 14) -> dict[str, Any]:
     matches = search_captures(conn, question, limit=6)
     recent = recent_captures(conn, limit=4, days=days)
@@ -425,53 +471,6 @@ def build_review_summary(conn: Any, *, days: int) -> tuple[str, dict[str, Any], 
         "top_terms": top_terms,
     }
     return "\n".join(lines).strip(), content, artifact_type
-
-
-def store_chat_artifact(
-    conn: Any,
-    *,
-    question: str,
-    context_packet: dict[str, Any],
-    text_output: str,
-    model: str,
-    mode: str,
-    provider: str,
-    agent: str,
-) -> str:
-    return create_artifact(
-        conn,
-        artifact_type="chat_turn",
-        target_type="system",
-        target_id=None,
-        model=model,
-        content={
-            "question": question,
-            "context_packet": context_packet,
-            "mode": mode,
-            "provider": provider,
-            "agent": agent,
-        },
-        text_output=text_output,
-    )
-
-
-def store_review_artifact(
-    conn: Any,
-    *,
-    days: int,
-    text_output: str,
-    content: dict[str, Any],
-    artifact_type: str,
-) -> str:
-    return create_artifact(
-        conn,
-        artifact_type=artifact_type,
-        target_type="system",
-        target_id=None,
-        model="local-review",
-        content=content,
-        text_output=text_output,
-    )
 
 
 def extract_top_terms(texts: list[str], *, limit: int = 8) -> list[str]:
