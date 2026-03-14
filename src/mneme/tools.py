@@ -5,6 +5,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from .consolidation import consolidate_recent_captures
 from .db import (
     CaptureRecord,
     create_artifact,
@@ -80,6 +81,18 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {"days": {"type": "integer", "minimum": 1}},
             "required": ["days"],
+        },
+    ),
+    "consolidate_recent_captures": ToolSpec(
+        name="consolidate_recent_captures",
+        description="Consolidate recent unlinked captures into threads, states, and evidence.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "minimum": 1},
+                "limit": {"type": "integer", "minimum": 1},
+                "dry_run": {"type": "boolean"},
+            },
         },
     ),
     "list_threads": ToolSpec(
@@ -273,6 +286,16 @@ def create_capture_tool(
         modality=modality,
         domains=domains,
     )
+
+
+def consolidate_recent_captures_tool(
+    conn: Any,
+    *,
+    days: int = 7,
+    limit: int = 25,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    return consolidate_recent_captures(conn, days=days, limit=limit, dry_run=dry_run)
 
 
 def build_context_packet(conn: Any, question: str, *, days: int = 14) -> dict[str, Any]:

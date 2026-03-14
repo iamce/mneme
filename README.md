@@ -109,6 +109,7 @@ Current MCP tools:
 
 - `create_capture`
 - `get_context_packet`
+- `consolidate_recent_captures`
 - `list_threads`
 - `get_thread_bundle`
 - `propose_thread`
@@ -122,6 +123,12 @@ Run a deterministic review summary:
 
 ```bash
 mneme review --days 7
+```
+
+Consolidate recent unlinked captures into threads and states:
+
+```bash
+mneme consolidate --days 7
 ```
 
 ## Seeded Domains
