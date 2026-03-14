@@ -118,22 +118,41 @@ def store_chat_artifact(
     mode: str,
     provider: str,
     agent: str,
+    request_id: str | None = None,
 ) -> str:
-    return create_artifact(
+    retrieval_summary, evidence_rows = _summarize_question_answer_provenance(context_packet)
+    artifact_id = create_artifact(
         conn,
         artifact_type="chat_turn",
         target_type="system",
         target_id=None,
         model=model,
         content={
+            "artifact_kind": "question_answer",
             "question": question,
             "context_packet": context_packet,
-            "mode": mode,
-            "provider": provider,
-            "agent": agent,
+            "response": {
+                "mode": mode,
+                "provider": provider,
+                "agent": agent,
+                "model": model,
+                "request_id": request_id,
+            },
+            "retrieval": retrieval_summary,
         },
         text_output=text_output,
     )
+    for row in evidence_rows:
+        link_evidence(
+            conn,
+            subject_type="artifact",
+            subject_id=artifact_id,
+            capture_id=row["capture_id"],
+            relation="supports",
+            confidence=row["confidence"],
+            note=row["note"],
+        )
+    return artifact_id
 
 
 def store_review_artifact(
@@ -208,3 +227,75 @@ def store_consolidation_run_artifact(
             confidence=0.6,
         )
     return artifact_id
+
+
+def _summarize_question_answer_provenance(
+    context_packet: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    evidence_rows: dict[str, dict[str, Any]] = {}
+    relevant_capture_ids: list[str] = []
+    citation_capture_ids: list[str] = []
+    thread_ids: list[str] = []
+    thread_citations: list[dict[str, Any]] = []
+
+    for row in context_packet.get("relevant_captures", []):
+        capture_id = row["id"]
+        relevant_capture_ids.append(capture_id)
+        evidence_row = evidence_rows.setdefault(
+            capture_id,
+            {
+                "capture_id": capture_id,
+                "confidence": 0.8,
+                "origins": set(),
+            },
+        )
+        evidence_row["origins"].add("relevant_capture")
+        evidence_row["confidence"] = max(float(evidence_row["confidence"]), 0.8)
+
+    for thread in context_packet.get("threads", []):
+        thread_ids.append(thread["id"])
+        for citation in thread.get("citations", []):
+            capture_id = citation["capture_id"]
+            if capture_id not in citation_capture_ids:
+                citation_capture_ids.append(capture_id)
+            origin = f"{citation['subject_type']}_citation"
+            evidence_row = evidence_rows.setdefault(
+                capture_id,
+                {
+                    "capture_id": capture_id,
+                    "confidence": 0.75,
+                    "origins": set(),
+                },
+            )
+            evidence_row["origins"].add(origin)
+            evidence_row["confidence"] = max(float(evidence_row["confidence"]), 0.75)
+            thread_citations.append(
+                {
+                    "thread_id": thread["id"],
+                    "capture_id": capture_id,
+                    "subject_type": citation["subject_type"],
+                    "relation": citation["relation"],
+                    "matched_terms": list(citation.get("matched_terms", [])),
+                    **({"state_id": citation["state_id"]} if citation.get("state_id") else {}),
+                }
+            )
+
+    evidence = [
+        {
+            "capture_id": capture_id,
+            "confidence": row["confidence"],
+            "note": ", ".join(sorted(row["origins"])),
+        }
+        for capture_id, row in evidence_rows.items()
+    ]
+    return (
+        {
+            "query_terms": list(context_packet.get("query_terms", [])),
+            "used_recent_fallback": bool(context_packet.get("used_recent_fallback")),
+            "relevant_capture_ids": relevant_capture_ids,
+            "thread_ids": thread_ids,
+            "citation_capture_ids": citation_capture_ids,
+            "thread_citations": thread_citations,
+        },
+        evidence,
+    )
