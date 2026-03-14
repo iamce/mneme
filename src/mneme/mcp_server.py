@@ -155,6 +155,7 @@ def record_thread_state(
     affect: str,
     horizon: str,
     confidence: float = 0.5,
+    status: str | None = None,
     evidence_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Record a current thread-state snapshot with optional evidence links."""
@@ -169,6 +170,7 @@ def record_thread_state(
             affect=affect,
             horizon=horizon,
             confidence=confidence,
+            status=status,
             evidence_ids=evidence_ids or [],
         )
     return {"state_id": state_id}

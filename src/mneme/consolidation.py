@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from .db import create_artifact
-from .memory import create_thread, link_evidence, record_thread_state
+from .memory import create_thread, link_evidence, record_thread_state, update_thread
 
 
 STOPWORDS = {
@@ -116,6 +116,8 @@ AFFECT_CUES = {
 }
 NOW_CUES = {"deadline", "overdue", "today", "tomorrow", "urgent"}
 SOON_CUES = {"next", "soon", "week"}
+CLOSED_CUES = {"booked", "done", "filed", "finished", "paid", "resolved", "sent", "shipped", "submitted"}
+DORMANT_CUES = {"backburner", "defer", "deferred", "eventually", "later", "parked", "paused", "someday"}
 MATCH_NOISE = (
     STOPWORDS
     | NOW_CUES
@@ -161,6 +163,7 @@ class ConsolidationCandidate:
     summary: str
     capture_ids: tuple[str, ...]
     state: dict[str, Any]
+    status: str
     salience: float
     confidence: float
     match: ThreadMatch | None
@@ -178,6 +181,7 @@ class ConsolidationCandidate:
             "summary": self.summary,
             "capture_ids": list(self.capture_ids),
             "state": dict(self.state),
+            "status": self.status,
             "salience": self.salience,
             "confidence": self.confidence,
             "matched_thread_id": self.match.id if self.match else None,
@@ -236,6 +240,7 @@ def consolidate_recent_captures(
     updated_count = 0
 
     for candidate in plan.candidates:
+        previous_thread: dict[str, Any] | None = None
         if candidate.match is None:
             thread_id = create_thread(
                 conn,
@@ -243,6 +248,7 @@ def consolidate_recent_captures(
                 kind=candidate.kind,
                 summary=candidate.summary,
                 domains=[candidate.domain],
+                status=candidate.status,
                 evidence_ids=candidate.capture_ids,
                 salience=candidate.salience,
                 confidence=candidate.confidence,
@@ -250,6 +256,17 @@ def consolidate_recent_captures(
             created_count += 1
         else:
             thread_id = candidate.match.id
+            previous_thread = _load_thread_snapshot(conn, thread_id)
+            update_thread(
+                conn,
+                thread_id=thread_id,
+                title=candidate.title,
+                kind=candidate.kind,
+                summary=_merge_thread_summary(previous_thread["canonical_summary"], candidate.summary),
+                status=candidate.status,
+                salience=max(candidate.salience, previous_thread["salience"]),
+                confidence=max(candidate.confidence, previous_thread["confidence"]),
+            )
             _attach_new_thread_evidence(conn, thread_id=thread_id, capture_ids=candidate.capture_ids)
             updated_count += 1
 
@@ -263,7 +280,15 @@ def consolidate_recent_captures(
             affect=candidate.state["affect"],
             horizon=candidate.state["horizon"],
             confidence=candidate.state["confidence"],
+            status=candidate.status,
             evidence_ids=candidate.capture_ids,
+        )
+        thread_artifact_id = _store_thread_lifecycle_artifact(
+            conn,
+            candidate=candidate,
+            thread_id=thread_id,
+            state_id=state_id,
+            previous_thread=previous_thread,
         )
 
         processed_capture_ids.extend(candidate.capture_ids)
@@ -272,7 +297,9 @@ def consolidate_recent_captures(
                 "action": candidate.action,
                 "thread_id": thread_id,
                 "state_id": state_id,
+                "artifact_id": thread_artifact_id,
                 "title": candidate.title,
+                "status": candidate.status,
                 "capture_ids": list(candidate.capture_ids),
             }
         )
@@ -337,6 +364,7 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
 
         for cluster in clusters:
             topic_terms = _topic_terms(cluster, domain=domain)
+            match_terms = _match_terms(cluster, domain=domain)
             if not topic_terms:
                 skipped.append(
                     {
@@ -356,7 +384,7 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
                 conn,
                 domain=domain,
                 title=title,
-                topic_terms=topic_terms,
+                topic_terms=match_terms,
                 kind=kind,
             )
             if match_result.reason is not None:
@@ -368,8 +396,18 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
                     }
                 )
                 continue
+            if len(cluster) == 1 and match_result.match is None and not _is_urgent(cluster[0].raw_text):
+                skipped.append(
+                    {
+                        "domain": domain,
+                        "capture_ids": [row.id for row in cluster],
+                        "reason": "low_overlap" if len(rows) > 1 else "insufficient_signal",
+                    }
+                )
+                continue
 
             state = _infer_state(cluster, confidence=confidence)
+            status = _infer_thread_status(cluster, state=state)
             candidates.append(
                 ConsolidationCandidate(
                     domain=domain,
@@ -378,6 +416,7 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
                     summary=summary,
                     capture_ids=tuple(row.id for row in cluster),
                     state=state,
+                    status=status,
                     salience=salience,
                     confidence=confidence,
                     match=match_result.match,
@@ -459,6 +498,15 @@ def _topic_terms(captures: list[CaptureInput], *, domain: str, limit: int = 3) -
             first_seen.setdefault(token, index)
             index += 1
     ordered = sorted(counts.items(), key=lambda item: (-item[1], first_seen[item[0]], item[0]))
+    return [term for term, _count in ordered[:limit]]
+
+
+def _match_terms(captures: list[CaptureInput], *, domain: str, limit: int = 6) -> list[str]:
+    counts: dict[str, int] = defaultdict(int)
+    for capture in captures:
+        for token in _signal_token_list(capture.raw_text, domain=domain):
+            counts[_normalize_match_token(token)] += 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     return [term for term, _count in ordered[:limit]]
 
 
@@ -552,8 +600,15 @@ def _infer_state(captures: list[CaptureInput], *, confidence: float) -> dict[str
     else:
         horizon = "later"
 
+    if urgent or len(captures) >= 3:
+        attention = "active"
+    elif _contains_any(tokens, DORMANT_CUES):
+        attention = "dormant"
+    else:
+        attention = "background"
+
     return {
-        "attention": "active" if urgent or len(captures) >= 3 else "background",
+        "attention": attention,
         "pressure": pressure,
         "posture": posture,
         "momentum": momentum,
@@ -561,6 +616,17 @@ def _infer_state(captures: list[CaptureInput], *, confidence: float) -> dict[str
         "horizon": horizon,
         "confidence": confidence,
     }
+
+
+def _infer_thread_status(captures: list[CaptureInput], *, state: dict[str, Any]) -> str:
+    tokens = _combined_tokens(captures)
+    if _contains_any(tokens, CLOSED_CUES) and not _contains_any(tokens, PRESSURE_CUES["acute"]):
+        return "closed"
+    if state["attention"] == "dormant":
+        return "dormant"
+    if state["horizon"] == "later" and state["pressure"] == "low" and state["posture"] in {"clear", "waiting"}:
+        return "dormant"
+    return "open"
 
 
 def _match_existing_thread(
@@ -638,14 +704,6 @@ def _cluster_domain_captures(
     domain: str,
 ) -> tuple[list[list[CaptureInput]], list[dict[str, Any]]]:
     if len(captures) <= 1:
-        if captures and not _is_urgent(captures[0].raw_text):
-            return [], [
-                {
-                    "domain": domain,
-                    "capture_ids": [captures[0].id],
-                    "reason": "insufficient_signal",
-                }
-            ]
         return [captures] if captures else [], []
 
     adjacency: dict[int, set[int]] = {index: set() for index in range(len(captures))}
@@ -680,15 +738,6 @@ def _cluster_domain_captures(
             stack.extend(sorted(adjacency[current] - visited))
 
         component.sort(key=lambda row: row.created_at, reverse=True)
-        if len(component) == 1 and not _is_urgent(component[0].raw_text):
-            skipped.append(
-                {
-                    "domain": domain,
-                    "capture_ids": [component[0].id],
-                    "reason": "low_overlap",
-                }
-            )
-            continue
         clusters.append(component)
 
     return clusters, skipped
@@ -717,6 +766,82 @@ def _attach_new_thread_evidence(conn: Any, *, thread_id: str, capture_ids: tuple
             relation="updates",
             confidence=0.65,
         )
+
+
+def _load_thread_snapshot(conn: Any, thread_id: str) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT id, title, kind, status, canonical_summary, salience, confidence
+        FROM threads
+        WHERE id = ?
+        """,
+        (thread_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Unknown thread: {thread_id}")
+    return dict(row)
+
+
+def _store_thread_lifecycle_artifact(
+    conn: Any,
+    *,
+    candidate: ConsolidationCandidate,
+    thread_id: str,
+    state_id: str,
+    previous_thread: dict[str, Any] | None,
+) -> str:
+    current_thread = _load_thread_snapshot(conn, thread_id)
+    content = {
+        "action": candidate.action,
+        "thread_id": thread_id,
+        "state_id": state_id,
+        "capture_ids": list(candidate.capture_ids),
+        "status_before": previous_thread["status"] if previous_thread else None,
+        "status_after": current_thread["status"],
+        "summary_before": previous_thread["canonical_summary"] if previous_thread else None,
+        "summary_after": current_thread["canonical_summary"],
+        "title_before": previous_thread["title"] if previous_thread else None,
+        "title_after": current_thread["title"],
+    }
+    artifact_id = create_artifact(
+        conn,
+        artifact_type="summary",
+        target_type="thread",
+        target_id=thread_id,
+        model="local-consolidation",
+        content=content,
+        text_output=_render_thread_lifecycle_note(content),
+    )
+    for capture_id in candidate.capture_ids:
+        link_evidence(
+            conn,
+            subject_type="artifact",
+            subject_id=artifact_id,
+            capture_id=capture_id,
+            relation="updates" if candidate.action == "update_thread" else "supports",
+            confidence=candidate.confidence,
+        )
+    return artifact_id
+
+
+def _render_thread_lifecycle_note(content: dict[str, Any]) -> str:
+    lines = [
+        f"Thread action: {content['action']}",
+        f"Status: {content['status_before'] or 'none'} -> {content['status_after']}",
+        f"Title: {content['title_after']}",
+    ]
+    if content["summary_after"]:
+        lines.append(f"Summary: {content['summary_after']}")
+    return "\n".join(lines)
+
+
+def _merge_thread_summary(previous_summary: str, new_summary: str) -> str:
+    if not previous_summary or previous_summary == new_summary:
+        return new_summary
+    earlier = _snippet(previous_summary, limit=140)
+    if earlier in new_summary:
+        return new_summary
+    return f"{new_summary} Earlier context: {earlier}"
 
 
 def _render_consolidation_report(
