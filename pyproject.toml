@@ -10,9 +10,26 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["mcp>=1.0.0", "openai>=1.0.0"]
 
+[project.optional-dependencies]
+dev = ["mypy>=1.19.1", "ruff>=0.15.6"]
+
 [project.scripts]
 mneme = "mneme.cli:main"
 mneme-mcp = "mneme.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mneme"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_consolidation.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+check_untyped_defs = true
+pretty = true
+warn_redundant_casts = true
+warn_unused_ignores = true

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -65,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def ensure_db(db_path: Path | None) -> tuple[Path, object]:
+def ensure_db(db_path: Path | None) -> tuple[Path, sqlite3.Connection]:
     path = db_path or default_db_path()
     conn = connect(path)
     initialize(conn)
