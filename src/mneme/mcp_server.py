@@ -13,7 +13,7 @@ from .tools import (
     build_context_packet,
     consolidate_recent_captures_tool,
     build_review_summary,
-    create_capture_tool,
+    create_capture_with_trigger_tool,
     get_artifact_tool,
     get_thread_bundle_tool,
     list_artifacts_tool,
@@ -52,15 +52,21 @@ def create_capture(
     source: str = "mcp",
     modality: str = "text",
     domains: list[str] | None = None,
+    run_consolidation: bool = False,
+    consolidation_days: int = 7,
+    consolidation_limit: int = 25,
 ) -> dict[str, Any]:
     """Store a raw personal capture with optional domains."""
     with managed_connection() as conn:
-        record = create_capture_tool(
+        record, triggered_result = create_capture_with_trigger_tool(
             conn,
             text=text,
             source=source,
             modality=modality,
             domains=domains or [],
+            run_consolidation=run_consolidation,
+            consolidation_days=consolidation_days,
+            consolidation_limit=consolidation_limit,
         )
     return {
         "id": record.id,
@@ -69,6 +75,7 @@ def create_capture(
         "modality": record.modality,
         "domains": list(record.domains),
         "raw_text": record.raw_text,
+        "triggered_consolidation": triggered_result,
     }
 
 

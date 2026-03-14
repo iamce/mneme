@@ -18,7 +18,7 @@ from .tools import (
     build_context_packet,
     build_review_summary,
     consolidate_recent_captures_tool,
-    create_capture_tool,
+    create_capture_with_trigger_tool,
     get_artifact_tool,
     list_artifacts_tool,
     render_context_packet,
@@ -40,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--source", default="cli")
     capture_parser.add_argument("--modality", default="text")
     capture_parser.add_argument("--domain", action="append", default=[])
+    capture_parser.add_argument("--trigger-consolidation", action="store_true")
+    capture_parser.add_argument("--consolidation-days", type=int, default=7)
+    capture_parser.add_argument("--consolidation-limit", type=int, default=25)
     capture_parser.set_defaults(handler=handle_capture)
 
     ask_parser = subparsers.add_parser("ask", help="Run a local retrieval pass.")
@@ -114,12 +117,25 @@ def read_capture_text(args: argparse.Namespace) -> str:
 def handle_capture(args: argparse.Namespace) -> int:
     text = read_capture_text(args)
     path, conn = ensure_db(args.db)
-    record = create_capture_tool(conn, text=text, source=args.source, modality=args.modality, domains=args.domain)
+    record, triggered_result = create_capture_with_trigger_tool(
+        conn,
+        text=text,
+        source=args.source,
+        modality=args.modality,
+        domains=args.domain,
+        run_consolidation=args.trigger_consolidation,
+        consolidation_days=args.consolidation_days,
+        consolidation_limit=args.consolidation_limit,
+    )
     conn.close()
 
     domain_part = ", ".join(record.domains) if record.domains else "none"
     print(f"[{record.id}] stored in {path}")
     print(f"domains: {domain_part}")
+    if triggered_result is not None:
+        print(f"trigger_execution_mode: {triggered_result['execution_mode']}")
+        print(f"trigger_decision_reason: {triggered_result['decision_reason']}")
+        print(f"trigger_artifact_id: {triggered_result['artifact_id']}")
     return 0
 
 
