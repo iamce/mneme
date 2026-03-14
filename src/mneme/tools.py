@@ -62,6 +62,9 @@ TOOL_REGISTRY = {
                 "source": {"type": "string"},
                 "modality": {"type": "string"},
                 "domains": {"type": "array", "items": {"type": "string"}},
+                "run_consolidation": {"type": "boolean"},
+                "consolidation_days": {"type": "integer", "minimum": 1},
+                "consolidation_limit": {"type": "integer", "minimum": 1},
             },
             "required": ["text"],
         },
@@ -328,6 +331,35 @@ def create_capture_tool(
         modality=modality,
         domains=domains,
     )
+
+
+def create_capture_with_trigger_tool(
+    conn: Any,
+    *,
+    text: str,
+    source: str = "cli",
+    modality: str = "text",
+    domains: list[str] | tuple[str, ...] = (),
+    run_consolidation: bool = False,
+    consolidation_days: int = 7,
+    consolidation_limit: int = 25,
+) -> tuple[CaptureRecord, dict[str, Any] | None]:
+    record = create_capture_tool(
+        conn,
+        text=text,
+        source=source,
+        modality=modality,
+        domains=domains,
+    )
+    triggered_result: dict[str, Any] | None = None
+    if run_consolidation:
+        triggered_result = run_triggered_consolidation(
+            conn,
+            trigger="capture",
+            days=consolidation_days,
+            limit=consolidation_limit,
+        )
+    return record, triggered_result
 
 
 def consolidate_recent_captures_tool(
