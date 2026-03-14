@@ -7,6 +7,14 @@ from typing import Any
 
 from .db import create_artifact
 from .memory import create_thread, link_evidence, record_thread_state, update_thread
+from .thread_merges import (
+    ExistingThread,
+    ThreadMergePlan,
+    apply_thread_merges,
+    build_thread_merge_plans,
+    load_active_threads_by_domain,
+    project_threads_after_merge,
+)
 
 
 STOPWORDS = {
@@ -195,6 +203,7 @@ class ConsolidationPlan:
     limit: int
     scanned_capture_count: int
     eligible_capture_count: int
+    thread_merges: tuple[ThreadMergePlan, ...]
     candidates: tuple[ConsolidationCandidate, ...]
     skipped: tuple[dict[str, Any], ...]
 
@@ -205,6 +214,8 @@ class ConsolidationPlan:
             "limit": self.limit,
             "scanned_capture_count": self.scanned_capture_count,
             "eligible_capture_count": self.eligible_capture_count,
+            "thread_merge_count": len(self.thread_merges),
+            "thread_merges": [plan.as_dict() for plan in self.thread_merges],
             "candidate_count": len(self.candidates),
             "candidates": [candidate.as_dict() for candidate in self.candidates],
             "skipped": [dict(row) for row in self.skipped],
@@ -222,14 +233,21 @@ def consolidate_recent_captures(
     result = plan.as_dict(dry_run=dry_run)
     if dry_run:
         return result
+    merged_threads = apply_thread_merges(
+        conn,
+        plan.thread_merges,
+        merge_summary=_merge_thread_summary,
+    )
     if not plan.candidates:
         result.update(
             {
+                "merged_thread_count": len(merged_threads),
+                "thread_merges": merged_threads,
                 "created_thread_count": 0,
                 "updated_thread_count": 0,
                 "state_count": 0,
                 "consolidated": [],
-                "summary": _render_consolidation_report(plan, [], 0, 0),
+                "summary": _render_consolidation_report(plan, merged_threads, [], 0, 0),
             }
         )
         return result
@@ -304,7 +322,13 @@ def consolidate_recent_captures(
             }
         )
 
-    text_output = _render_consolidation_report(plan, consolidated, created_count, updated_count)
+    text_output = _render_consolidation_report(
+        plan,
+        merged_threads,
+        consolidated,
+        created_count,
+        updated_count,
+    )
     artifact_id = create_artifact(
         conn,
         artifact_type="summary",
@@ -314,6 +338,8 @@ def consolidate_recent_captures(
         content={
             "days": days,
             "limit": limit,
+            "merged_thread_count": len(merged_threads),
+            "thread_merges": merged_threads,
             "created_thread_count": created_count,
             "updated_thread_count": updated_count,
             "consolidated": consolidated,
@@ -334,6 +360,8 @@ def consolidate_recent_captures(
     result.update(
         {
             "artifact_id": artifact_id,
+            "merged_thread_count": len(merged_threads),
+            "thread_merges": merged_threads,
             "created_thread_count": created_count,
             "updated_thread_count": updated_count,
             "state_count": len(consolidated),
@@ -348,6 +376,16 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
     captures = _load_recent_unlinked_captures(conn, days=days, limit=limit)
     skipped: list[dict[str, Any]] = []
     grouped: dict[str, list[CaptureInput]] = defaultdict(list)
+    active_threads = load_active_threads_by_domain(conn)
+    thread_merges = build_thread_merge_plans(
+        active_threads,
+        tokenize=lambda text, current_domain: _normalized_signal_tokens(text, domain=current_domain),
+    )
+    projected_threads = project_threads_after_merge(
+        active_threads,
+        thread_merges,
+        merge_summary=_merge_thread_summary,
+    )
 
     for capture in captures:
         primary_domain = capture.primary_domain
@@ -381,7 +419,7 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
             confidence = round(min(0.9, 0.45 + (len(cluster) * 0.1) + (len(topic_terms) * 0.05)), 2)
             salience = _infer_salience(cluster)
             match_result = _match_existing_thread(
-                conn,
+                projected_threads.get(domain, ()),
                 domain=domain,
                 title=title,
                 topic_terms=match_terms,
@@ -428,6 +466,7 @@ def build_consolidation_plan(conn: Any, *, days: int = 7, limit: int = 25) -> Co
         limit=limit,
         scanned_capture_count=len(captures),
         eligible_capture_count=sum(len(rows) for rows in grouped.values()),
+        thread_merges=thread_merges,
         candidates=tuple(candidates),
         skipped=tuple(skipped),
     )
@@ -630,50 +669,29 @@ def _infer_thread_status(captures: list[CaptureInput], *, state: dict[str, Any])
 
 
 def _match_existing_thread(
-    conn: Any,
+    threads: tuple[ExistingThread, ...],
     *,
     domain: str,
     title: str,
     topic_terms: list[str],
     kind: str,
 ) -> ThreadMatchResult:
-    rows = conn.execute(
-        """
-        SELECT
-          t.id,
-          t.title,
-          t.canonical_summary,
-          t.kind,
-          GROUP_CONCAT(c.raw_text, ' ') AS evidence_text
-        FROM threads AS t
-        JOIN thread_domains AS td ON td.thread_id = t.id
-        JOIN domains AS d ON d.id = td.domain_id
-        LEFT JOIN evidence_links AS el
-          ON el.subject_type = 'thread' AND el.subject_id = t.id
-        LEFT JOIN captures AS c ON c.id = el.capture_id
-        WHERE LOWER(d.name) = ?
-          AND t.status != 'closed'
-        GROUP BY t.id, t.title, t.canonical_summary, t.kind
-        ORDER BY t.last_seen_at DESC
-        """,
-        (domain.lower(),),
-    ).fetchall()
-    if not rows:
+    if not threads:
         return ThreadMatchResult()
 
     lowered_title = title.lower()
-    for row in rows:
-        if row["title"].lower() == lowered_title:
-            return ThreadMatchResult(match=ThreadMatch(id=row["id"], title=row["title"]))
+    for thread in threads:
+        if thread.title.lower() == lowered_title:
+            return ThreadMatchResult(match=ThreadMatch(id=thread.id, title=thread.title))
 
     topic_token_set = {_normalize_match_token(term) for term in topic_terms}
     if not topic_token_set:
         return ThreadMatchResult()
 
     scored_matches: list[tuple[float, ThreadMatch]] = []
-    for row in rows:
+    for thread in threads:
         haystack = _normalized_signal_tokens(
-            f"{row['title']} {row['canonical_summary']} {row['evidence_text'] or ''}",
+            thread.search_text,
             domain=domain,
         )
         shared = topic_token_set & haystack
@@ -685,9 +703,9 @@ def _match_existing_thread(
             continue
 
         score = overlap + min(0.25, len(shared) * 0.1)
-        if row["kind"] == kind:
+        if thread.kind == kind:
             score += 0.15
-        scored_matches.append((score, ThreadMatch(id=row["id"], title=row["title"])))
+        scored_matches.append((score, ThreadMatch(id=thread.id, title=thread.title)))
 
     if not scored_matches:
         return ThreadMatchResult()
@@ -846,6 +864,7 @@ def _merge_thread_summary(previous_summary: str, new_summary: str) -> str:
 
 def _render_consolidation_report(
     plan: ConsolidationPlan,
+    merged_threads: list[dict[str, Any]],
     consolidated: list[dict[str, Any]],
     created_count: int,
     updated_count: int,
@@ -853,10 +872,21 @@ def _render_consolidation_report(
     lines = [
         f"Consolidation window: last {plan.days} day(s)",
         f"Scanned captures: {plan.scanned_capture_count}",
+        f"Existing thread merges: {len(merged_threads)}",
         f"Candidates applied: {len(consolidated)}",
         f"Threads created: {created_count}",
         f"Threads updated: {updated_count}",
     ]
+    if plan.thread_merges:
+        lines.append("")
+        lines.append("Thread merges:")
+        merge_rows = merged_threads or [merge.as_dict() for merge in plan.thread_merges]
+        for row in merge_rows:
+            terms = ", ".join(row["shared_terms"]) if row["shared_terms"] else "none"
+            lines.append(
+                f"- {row['duplicate_thread_title']} -> {row['canonical_thread_title']} "
+                f"({row['reason']}, shared: {terms})"
+            )
     if consolidated:
         lines.append("")
         lines.append("Applied:")

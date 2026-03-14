@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mneme.consolidation import consolidate_recent_captures  # noqa: E402
 from mneme.db import connect, initialize, insert_capture  # noqa: E402
+from mneme.memory import create_thread, get_thread_bundle, record_thread_state  # noqa: E402
 
 
 class ConsolidationTests(unittest.TestCase):
@@ -194,6 +195,146 @@ class ConsolidationTests(unittest.TestCase):
         self.assertEqual(result["state_count"], 0)
         self.assertEqual(result["consolidated"], [])
         self.assertNotIn("artifact_id", result)
+
+    def test_existing_overlap_is_inspected_and_merged_before_matching_new_capture(self) -> None:
+        overdue = insert_capture(
+            self.conn,
+            raw_text="Taxes are overdue and the filing is still blocked.",
+            domains=["Money"],
+        )
+        receipts = insert_capture(
+            self.conn,
+            raw_text="Still missing a few tax receipts for the filing.",
+            domains=["Money"],
+        )
+        backlog = insert_capture(
+            self.conn,
+            raw_text="Tax filing is stuck until I sort the receipts.",
+            domains=["Money"],
+        )
+
+        canonical_thread_id = create_thread(
+            self.conn,
+            title="Money: taxes and receipts",
+            kind="obligation",
+            summary="Tax filing remains overdue and several receipts are still missing.",
+            domains=["Money"],
+            evidence_ids=[overdue.id, receipts.id],
+            salience=0.8,
+            confidence=0.8,
+        )
+        record_thread_state(
+            self.conn,
+            thread_id=canonical_thread_id,
+            attention="active",
+            pressure="high",
+            posture="blocked",
+            momentum="drifting",
+            affect="draining",
+            horizon="now",
+            confidence=0.8,
+            evidence_ids=[overdue.id],
+        )
+
+        duplicate_thread_id = create_thread(
+            self.conn,
+            title="Money: tax filing and receipts",
+            kind="obligation",
+            summary="Need to finish the tax filing and organize the receipts.",
+            domains=["Money"],
+            evidence_ids=[backlog.id],
+            salience=0.6,
+            confidence=0.7,
+        )
+        record_thread_state(
+            self.conn,
+            thread_id=duplicate_thread_id,
+            attention="background",
+            pressure="medium",
+            posture="waiting",
+            momentum="stable",
+            affect="neutral",
+            horizon="soon",
+            confidence=0.7,
+            evidence_ids=[backlog.id],
+        )
+
+        follow_up = insert_capture(
+            self.conn,
+            raw_text="Finished the tax filing and submitted the receipts.",
+            domains=["Money"],
+        )
+
+        preview = consolidate_recent_captures(self.conn, days=30, limit=10, dry_run=True)
+
+        self.assertEqual(preview["thread_merge_count"], 1)
+        self.assertEqual(preview["candidate_count"], 1)
+        merge = preview["thread_merges"][0]
+        self.assertEqual(merge["canonical_thread_id"], canonical_thread_id)
+        self.assertEqual(merge["duplicate_thread_id"], duplicate_thread_id)
+        self.assertEqual(merge["reason"], "high_overlap")
+        self.assertIn("tax", merge["shared_terms"])
+        self.assertEqual(preview["candidates"][0]["matched_thread_id"], canonical_thread_id)
+
+        applied = consolidate_recent_captures(self.conn, days=30, limit=10)
+
+        self.assertEqual(applied["merged_thread_count"], 1)
+        self.assertEqual(applied["created_thread_count"], 0)
+        self.assertEqual(applied["updated_thread_count"], 1)
+        self.assertIn("Existing thread merges: 1", applied["summary"])
+        self.assertIn("Thread merges:", applied["summary"])
+
+        thread_count = self.conn.execute("SELECT COUNT(*) AS count FROM threads").fetchone()["count"]
+        self.assertEqual(thread_count, 1)
+
+        duplicate_exists = self.conn.execute(
+            "SELECT 1 FROM threads WHERE id = ?",
+            (duplicate_thread_id,),
+        ).fetchone()
+        self.assertIsNone(duplicate_exists)
+
+        bundle = get_thread_bundle(self.conn, canonical_thread_id)
+        self.assertEqual(len(bundle["state_history"]), 3)
+        evidence_capture_ids = {row["capture_id"] for row in bundle["thread_evidence"]}
+        self.assertIn(backlog.id, evidence_capture_ids)
+        self.assertIn(follow_up.id, evidence_capture_ids)
+        self.assertTrue(
+            any(artifact["content"].get("action") == "merge_thread" for artifact in bundle["artifacts"])
+        )
+
+    def test_existing_threads_with_distinct_topics_are_not_merged(self) -> None:
+        tax_capture = insert_capture(
+            self.conn,
+            raw_text="Taxes are overdue and I still need receipts.",
+            domains=["Money"],
+        )
+        insurance_capture = insert_capture(
+            self.conn,
+            raw_text="Car insurance renewal is due next week.",
+            domains=["Money"],
+        )
+
+        create_thread(
+            self.conn,
+            title="Money: taxes and receipts",
+            kind="obligation",
+            summary="Tax filing remains overdue and receipts are missing.",
+            domains=["Money"],
+            evidence_ids=[tax_capture.id],
+        )
+        create_thread(
+            self.conn,
+            title="Money: insurance and renewal",
+            kind="obligation",
+            summary="Insurance renewal paperwork is due next week.",
+            domains=["Money"],
+            evidence_ids=[insurance_capture.id],
+        )
+
+        preview = consolidate_recent_captures(self.conn, days=30, limit=10, dry_run=True)
+
+        self.assertEqual(preview["thread_merge_count"], 0)
+        self.assertEqual(preview["thread_merges"], [])
 
 
 if __name__ == "__main__":
