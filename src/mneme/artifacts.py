@@ -170,28 +170,32 @@ def store_consolidation_run_artifact(
     skipped: list[dict[str, Any]],
     text_output: str,
     evidence_capture_ids: Iterable[str] = (),
+    run_metadata: dict[str, Any] | None = None,
 ) -> str:
+    content = {
+        "artifact_kind": "consolidation_run",
+        "days": days,
+        "limit": limit,
+        "scanned_capture_count": scanned_capture_count,
+        "eligible_capture_count": eligible_capture_count,
+        "thread_merge_count": len(thread_merges),
+        "thread_merges": thread_merges,
+        "candidate_count": candidate_count,
+        "created_thread_count": created_thread_count,
+        "updated_thread_count": updated_thread_count,
+        "state_count": state_count,
+        "consolidated": consolidated,
+        "skipped": skipped,
+    }
+    if run_metadata:
+        content.update(run_metadata)
     artifact_id = create_artifact(
         conn,
         artifact_type="summary",
         target_type="system",
         target_id=None,
         model="local-consolidation",
-        content={
-            "artifact_kind": "consolidation_run",
-            "days": days,
-            "limit": limit,
-            "scanned_capture_count": scanned_capture_count,
-            "eligible_capture_count": eligible_capture_count,
-            "thread_merge_count": len(thread_merges),
-            "thread_merges": thread_merges,
-            "candidate_count": candidate_count,
-            "created_thread_count": created_thread_count,
-            "updated_thread_count": updated_thread_count,
-            "state_count": state_count,
-            "consolidated": consolidated,
-            "skipped": skipped,
-        },
+        content=content,
         text_output=text_output,
     )
     for capture_id in evidence_capture_ids:

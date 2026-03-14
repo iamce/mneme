@@ -22,6 +22,7 @@ from .tools import (
     get_artifact_tool,
     list_artifacts_tool,
     render_context_packet,
+    run_triggered_consolidation_tool,
 )
 
 
@@ -75,6 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
     consolidate_parser.add_argument("--limit", type=int, default=25)
     consolidate_parser.add_argument("--dry-run", action="store_true")
     consolidate_parser.set_defaults(handler=handle_consolidate)
+
+    consolidate_trigger_parser = subparsers.add_parser(
+        "consolidate-trigger",
+        help="Run the deterministic consolidation policy for a capture or schedule trigger.",
+    )
+    consolidate_trigger_parser.add_argument("--trigger", choices=("capture", "schedule"), required=True)
+    consolidate_trigger_parser.add_argument("--days", type=int, default=7)
+    consolidate_trigger_parser.add_argument("--limit", type=int, default=25)
+    consolidate_trigger_parser.set_defaults(handler=handle_consolidate_trigger)
 
     return parser
 
@@ -261,6 +271,45 @@ def handle_consolidate(args: argparse.Namespace) -> int:
         print(f"updated_threads: {result['updated_thread_count']}")
         if result.get("artifact_id"):
             print(f"artifact_id: {result['artifact_id']}")
+
+    return 0
+
+
+def handle_consolidate_trigger(args: argparse.Namespace) -> int:
+    _, conn = ensure_db(args.db)
+    result = run_triggered_consolidation_tool(
+        conn,
+        trigger=args.trigger,
+        days=args.days,
+        limit=args.limit,
+    )
+    conn.close()
+
+    print(f"trigger: {result['trigger']}")
+    print(f"execution_mode: {result['execution_mode']}")
+    print(f"decision_reason: {result['decision_reason']}")
+    print(f"dry_run: {str(result['dry_run']).lower()}")
+    print(f"scanned_captures: {result['scanned_capture_count']}")
+    print(f"thread_merge_count: {result['thread_merge_count']}")
+    print(f"candidate_count: {result['candidate_count']}")
+
+    for merge in result["thread_merges"]:
+        shared_terms = ", ".join(merge["shared_terms"]) if merge["shared_terms"] else "none"
+        print(
+            f"- merge_thread: {merge['duplicate_thread_title']} -> {merge['canonical_thread_title']} "
+            f"({merge['reason']}; shared: {shared_terms})"
+        )
+
+    for candidate in result["candidates"]:
+        print(
+            f"- {candidate['action']}: {candidate['title']} "
+            f"({len(candidate['capture_ids'])} capture(s))"
+        )
+
+    print(f"artifact_id: {result['artifact_id']}")
+    if result.get("summary"):
+        print("summary:")
+        print(result["summary"])
 
     return 0
 

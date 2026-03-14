@@ -19,6 +19,7 @@ from .db import (
     search_captures,
 )
 from .memory import create_thread, get_thread_bundle, link_evidence, list_threads, record_thread_state
+from .triggered_consolidation import run_triggered_consolidation
 
 
 STOPWORDS = {
@@ -96,6 +97,19 @@ TOOL_REGISTRY = {
                 "limit": {"type": "integer", "minimum": 1},
                 "dry_run": {"type": "boolean"},
             },
+        },
+    ),
+    "run_triggered_consolidation": ToolSpec(
+        name="run_triggered_consolidation",
+        description="Apply the deterministic trigger policy for capture- or schedule-driven consolidation.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "trigger": {"type": "string"},
+                "days": {"type": "integer", "minimum": 1},
+                "limit": {"type": "integer", "minimum": 1},
+            },
+            "required": ["trigger"],
         },
     ),
     "list_artifacts": ToolSpec(
@@ -324,6 +338,16 @@ def consolidate_recent_captures_tool(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     return consolidate_recent_captures(conn, days=days, limit=limit, dry_run=dry_run)
+
+
+def run_triggered_consolidation_tool(
+    conn: Any,
+    *,
+    trigger: str,
+    days: int = 7,
+    limit: int = 25,
+) -> dict[str, Any]:
+    return run_triggered_consolidation(conn, trigger=trigger, days=days, limit=limit)
 
 
 def list_artifacts_tool(
