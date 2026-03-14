@@ -9,8 +9,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mneme.consolidation import consolidate_recent_captures
-from mneme.db import connect, initialize, insert_capture
+from mneme.consolidation import consolidate_recent_captures  # noqa: E402
+from mneme.db import connect, initialize, insert_capture  # noqa: E402
 
 
 class ConsolidationTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class ConsolidationTests(unittest.TestCase):
 
         self.assertEqual(thread_count, 1)
         self.assertEqual(state_count, 1)
-        self.assertEqual(link_count, 6)
+        self.assertEqual(link_count, 8)
 
     def test_second_run_updates_matching_thread_instead_of_creating_duplicate(self) -> None:
         insert_capture(

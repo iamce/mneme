@@ -148,6 +148,7 @@ TOOL_REGISTRY = {
                 "affect": {"type": "string"},
                 "horizon": {"type": "string"},
                 "confidence": {"type": "number"},
+                "status": {"type": "string"},
                 "evidence_ids": {"type": "array", "items": {"type": "string"}},
             },
             "required": [
@@ -234,6 +235,7 @@ def record_thread_state_tool(
     affect: str,
     horizon: str,
     confidence: float = 0.5,
+    status: str | None = None,
     evidence_ids: list[str] | tuple[str, ...] = (),
 ) -> str:
     return record_thread_state(
@@ -246,6 +248,7 @@ def record_thread_state_tool(
         affect=affect,
         horizon=horizon,
         confidence=confidence,
+        status=status,
         evidence_ids=evidence_ids,
     )
 

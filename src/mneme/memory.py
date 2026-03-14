@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable
 
 from .db import domain_ids_by_name, new_id, now_utc
@@ -109,6 +110,60 @@ def create_thread(
     return thread_id
 
 
+def update_thread(
+    conn: Any,
+    *,
+    thread_id: str,
+    title: str | None = None,
+    kind: str | None = None,
+    summary: str | None = None,
+    status: str | None = None,
+    salience: float | None = None,
+    confidence: float | None = None,
+    last_seen_at: str | None = None,
+) -> dict[str, Any]:
+    existing = conn.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
+    if existing is None:
+        raise ValueError(f"Unknown thread: {thread_id}")
+
+    if kind is not None:
+        _validate_choice("kind", kind, THREAD_KINDS)
+    if status is not None:
+        _validate_choice("status", status, THREAD_STATUSES)
+
+    timestamp = now_utc()
+    next_last_seen_at = last_seen_at or timestamp
+    conn.execute(
+        """
+        UPDATE threads
+        SET
+          updated_at = ?,
+          title = COALESCE(?, title),
+          kind = COALESCE(?, kind),
+          status = COALESCE(?, status),
+          canonical_summary = COALESCE(?, canonical_summary),
+          last_seen_at = ?,
+          salience = COALESCE(?, salience),
+          confidence = COALESCE(?, confidence)
+        WHERE id = ?
+        """,
+        (
+            timestamp,
+            title,
+            kind,
+            status,
+            summary,
+            next_last_seen_at,
+            salience,
+            confidence,
+            thread_id,
+        ),
+    )
+    conn.commit()
+    updated = conn.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
+    return dict(updated)
+
+
 def list_threads(
     conn: Any,
     *,
@@ -190,11 +245,28 @@ def get_thread_bundle(conn: Any, thread_id: str) -> dict[str, Any]:
         SELECT *
         FROM thread_states
         WHERE thread_id = ? AND is_current = 1
-        ORDER BY observed_at DESC
+        ORDER BY observed_at DESC, rowid DESC
         LIMIT 1
         """,
         (thread_id,),
     ).fetchone()
+
+    state_history = conn.execute(
+        """
+        SELECT
+          ts.*,
+          (
+            SELECT COUNT(*)
+            FROM evidence_links AS el
+            WHERE el.subject_type = 'thread_state' AND el.subject_id = ts.id
+          ) AS evidence_count
+        FROM thread_states AS ts
+        WHERE ts.thread_id = ?
+        ORDER BY ts.observed_at DESC, ts.rowid DESC
+        LIMIT 10
+        """,
+        (thread_id,),
+    ).fetchall()
 
     evidence = conn.execute(
         """
@@ -209,7 +281,48 @@ def get_thread_bundle(conn: Any, thread_id: str) -> dict[str, Any]:
         FROM evidence_links AS el
         JOIN captures AS c ON c.id = el.capture_id
         WHERE el.subject_type = 'thread' AND el.subject_id = ?
-        ORDER BY c.created_at DESC
+        ORDER BY c.created_at DESC, el.rowid DESC
+        LIMIT 10
+        """,
+        (thread_id,),
+    ).fetchall()
+
+    state_evidence = conn.execute(
+        """
+        SELECT
+          ts.id AS state_id,
+          ts.observed_at,
+          ts.is_current,
+          el.id,
+          el.relation,
+          el.confidence,
+          el.note,
+          c.id AS capture_id,
+          c.created_at,
+          c.raw_text
+        FROM thread_states AS ts
+        JOIN evidence_links AS el
+          ON el.subject_type = 'thread_state' AND el.subject_id = ts.id
+        JOIN captures AS c ON c.id = el.capture_id
+        WHERE ts.thread_id = ?
+        ORDER BY ts.observed_at DESC, ts.rowid DESC, c.created_at DESC
+        LIMIT 20
+        """,
+        (thread_id,),
+    ).fetchall()
+
+    artifacts = conn.execute(
+        """
+        SELECT
+          id,
+          created_at,
+          artifact_type,
+          model,
+          content_json,
+          text_output
+        FROM artifacts
+        WHERE target_type = 'thread' AND target_id = ?
+        ORDER BY created_at DESC, rowid DESC
         LIMIT 10
         """,
         (thread_id,),
@@ -218,7 +331,17 @@ def get_thread_bundle(conn: Any, thread_id: str) -> dict[str, Any]:
     return {
         "thread": dict(thread),
         "current_state": dict(state) if state is not None else None,
+        "state_history": [dict(row) for row in state_history],
         "evidence": [dict(row) for row in evidence],
+        "thread_evidence": [dict(row) for row in evidence],
+        "state_evidence": [dict(row) for row in state_evidence],
+        "artifacts": [
+            {
+                **dict(row),
+                "content": json.loads(row["content_json"]),
+            }
+            for row in artifacts
+        ],
     }
 
 
@@ -233,6 +356,7 @@ def record_thread_state(
     affect: str,
     horizon: str,
     confidence: float = 0.5,
+    status: str | None = None,
     evidence_ids: Iterable[str] = (),
 ) -> str:
     _validate_choice("attention", attention, ATTENTION_VALUES)
@@ -241,6 +365,8 @@ def record_thread_state(
     _validate_choice("momentum", momentum, MOMENTUM_VALUES)
     _validate_choice("affect", affect, AFFECT_VALUES)
     _validate_choice("horizon", horizon, HORIZON_VALUES)
+    if status is not None:
+        _validate_choice("status", status, THREAD_STATUSES)
 
     existing = conn.execute("SELECT id FROM threads WHERE id = ?", (thread_id,)).fetchone()
     if existing is None:
@@ -273,9 +399,16 @@ def record_thread_state(
             confidence,
         ),
     )
+    derived_status = status or _derive_thread_status(
+        attention=attention,
+        pressure=pressure,
+        posture=posture,
+        momentum=momentum,
+        horizon=horizon,
+    )
     conn.execute(
-        "UPDATE threads SET updated_at = ?, last_seen_at = ? WHERE id = ?",
-        (timestamp, timestamp, thread_id),
+        "UPDATE threads SET updated_at = ?, last_seen_at = ?, status = ? WHERE id = ?",
+        (timestamp, timestamp, derived_status, thread_id),
     )
 
     for capture_id in evidence_ids:
@@ -290,6 +423,23 @@ def record_thread_state(
 
     conn.commit()
     return state_id
+
+
+def _derive_thread_status(
+    *,
+    attention: str,
+    pressure: str,
+    posture: str,
+    momentum: str,
+    horizon: str,
+) -> str:
+    if posture == "decided" and momentum == "progressing" and pressure in {"low", "medium"}:
+        return "closed"
+    if attention == "dormant":
+        return "dormant"
+    if horizon == "later" and pressure == "low" and posture in {"clear", "waiting", "decided"}:
+        return "dormant"
+    return "open"
 
 
 def link_evidence(
