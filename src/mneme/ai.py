@@ -5,12 +5,13 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from .agents import AgentProfile, default_agent_name, get_agent_profile
+from .agents import default_agent_name, get_agent_profile
 
+OpenAIClient: Any
 try:
-    from openai import OpenAI
+    from openai import OpenAI as OpenAIClient
 except ImportError:  # pragma: no cover
-    OpenAI = None
+    OpenAIClient = None
 
 
 DEFAULT_MODEL = "gpt-5.4"
@@ -67,7 +68,7 @@ def resolve_ai_config(
 
 
 def openai_ready() -> tuple[bool, str | None]:
-    if OpenAI is None:
+    if OpenAIClient is None:
         return False, "openai package is not installed"
     if not os.environ.get("OPENAI_API_KEY"):
         return False, "OPENAI_API_KEY is not set"
@@ -83,11 +84,11 @@ def provider_ready(provider: str) -> tuple[bool, str | None]:
 def answer_question(*, context_packet: dict[str, Any], config: AIConfig) -> AIResult:
     if config.provider != "openai":
         raise RuntimeError(f"Provider '{config.provider}' is not implemented")
-    if OpenAI is None:
+    if OpenAIClient is None:
         raise RuntimeError("openai package is not installed")
 
     profile = get_agent_profile(config.agent)
-    client = OpenAI()
+    client = OpenAIClient()
     response = client.responses.create(
         model=config.model,
         instructions=profile.instructions,

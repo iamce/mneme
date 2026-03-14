@@ -53,6 +53,12 @@ Install the package in editable mode:
 python3 -m pip install -e .
 ```
 
+Install the local check toolchain:
+
+```bash
+make install-dev
+```
+
 Export your API key if you want model-backed `ask` responses:
 
 ```bash
@@ -132,6 +138,19 @@ Consolidate recent unlinked captures into threads and states:
 ```bash
 mneme consolidate --days 7
 ```
+
+## Local Checks
+
+Run the repo-native checks with:
+
+```bash
+make test
+make lint
+make typecheck
+make check
+```
+
+These same commands back the GitHub Actions CI workflow.
 
 ## Seeded Domains
 

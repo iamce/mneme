@@ -180,7 +180,7 @@ def search_captures(conn: sqlite3.Connection, query: str, *, limit: int = 8) -> 
         return recent_captures(conn, limit=limit)
 
     clauses = " OR ".join("LOWER(c.raw_text) LIKE ?" for _ in tokens)
-    params = [f"%{token}%" for token in tokens]
+    params: list[Any] = [f"%{token}%" for token in tokens]
     params.append(limit)
     sql = f"""
         SELECT c.*, GROUP_CONCAT(d.name, ', ') AS domains
