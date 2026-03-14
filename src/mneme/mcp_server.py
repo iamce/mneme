@@ -21,6 +21,7 @@ from .tools import (
     list_threads_tool,
     propose_thread_tool,
     record_thread_state_tool,
+    run_triggered_consolidation_tool,
 )
 
 
@@ -99,6 +100,17 @@ def consolidate_recent_captures(
     """Consolidate recent unlinked captures into threads, states, and evidence."""
     with managed_connection() as conn:
         return consolidate_recent_captures_tool(conn, days=days, limit=limit, dry_run=dry_run)
+
+
+@mcp.tool()
+def run_triggered_consolidation(
+    trigger: str,
+    days: int = 7,
+    limit: int = 25,
+) -> dict[str, Any]:
+    """Apply the deterministic trigger policy for capture- or schedule-driven consolidation."""
+    with managed_connection() as conn:
+        return run_triggered_consolidation_tool(conn, trigger=trigger, days=days, limit=limit)
 
 
 @mcp.tool()

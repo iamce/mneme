@@ -229,6 +229,9 @@ def consolidate_recent_captures(
     days: int = 7,
     limit: int = 25,
     dry_run: bool = False,
+    trigger: str | None = None,
+    execution_mode: str | None = None,
+    decision_reason: str | None = None,
 ) -> dict[str, Any]:
     plan = build_consolidation_plan(conn, days=days, limit=limit)
     result = plan.as_dict(dry_run=dry_run)
@@ -255,6 +258,12 @@ def consolidate_recent_captures(
             consolidated=[],
             skipped=[dict(row) for row in plan.skipped],
             text_output=text_output,
+            run_metadata=_build_run_metadata(
+                dry_run=False,
+                trigger=trigger,
+                execution_mode=execution_mode,
+                decision_reason=decision_reason,
+            ),
         )
         result.update(
             {
@@ -362,6 +371,12 @@ def consolidate_recent_captures(
         skipped=[dict(row) for row in plan.skipped],
         text_output=text_output,
         evidence_capture_ids=processed_capture_ids,
+        run_metadata=_build_run_metadata(
+            dry_run=False,
+            trigger=trigger,
+            execution_mode=execution_mode,
+            decision_reason=decision_reason,
+        ),
     )
 
     result.update(
@@ -959,3 +974,20 @@ def _snippet(text: str, *, limit: int = 72) -> str:
 def _is_urgent(text: str) -> bool:
     tokens = _tokens(text)
     return _contains_any(tokens, PRESSURE_CUES["acute"] | PRESSURE_CUES["high"])
+
+
+def _build_run_metadata(
+    *,
+    dry_run: bool,
+    trigger: str | None,
+    execution_mode: str | None,
+    decision_reason: str | None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"dry_run": dry_run}
+    if trigger is not None:
+        metadata["trigger"] = trigger
+    if execution_mode is not None:
+        metadata["execution_mode"] = execution_mode
+    if decision_reason is not None:
+        metadata["decision_reason"] = decision_reason
+    return metadata
