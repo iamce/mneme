@@ -9,17 +9,24 @@ This document keeps the project pointed at the next useful layers of the memory 
 Shipped now:
 
 - SQLite-backed memory store with captures, threads, thread states, evidence links, and artifacts
-- Local CLI commands for `init`, `capture`, `ask`, `review`, `mcp`, and `consolidate`
-- MCP tools for capture, retrieval, review, thread operations, schema inspection, and consolidation
+- Local CLI commands for `init`, `capture`, `ask`, `review`, `mcp`, `consolidate`, artifact inspection, and triggered consolidation
+- MCP tools for capture, retrieval, review, thread operations, schema inspection, artifact inspection, and consolidation
 - Provider and agent abstractions for model-backed `ask`
 - Deterministic consolidation of recent unlinked captures into threads, current states, and evidence
-- Local test coverage for the consolidation path
+- Deterministic overlap-based existing-thread merges with inspectable merge artifacts
+- Durable consolidation run artifacts for apply, preview, no-op, and merge-only runs
+- Triggered consolidation policy with capture-preview behavior and schedule-safe apply behavior
+- Real capture-time hook and fixed scheduled entrypoint via the existing trigger policy surface
+- Repo-native local and CI checks with `make check`
+- Local test coverage for consolidation, lifecycle, artifact, and trigger flows
 
 Current shape:
 
 - `src/mneme/db.py`: storage bootstrap and query helpers
 - `src/mneme/memory.py`: thread, state, and evidence operations
 - `src/mneme/consolidation.py`: recent-capture consolidation logic
+- `src/mneme/triggered_consolidation.py`: trigger policy and execution mode selection
+- `src/mneme/artifacts.py`: durable artifact storage and inspection helpers
 - `src/mneme/tools.py`: agent-facing tool surface
 - `src/mneme/mcp_server.py`: MCP server
 - `src/mneme/cli.py`: human-facing CLI
@@ -33,63 +40,54 @@ mneme should remain a personal memory substrate for agents and humans, not a sin
 - keep evidence traceable back to source captures
 - expose the substrate through local tools and MCP, not only through one UI or one agent policy
 
-## Near-Term Milestones
+## Completed Milestones
 
 ### 1. Consolidation Hardening
 
-Goal:
-- Make consolidation less brittle while staying deterministic and inspectable.
+Status:
+- Complete
 
-Definition of done:
-- Better thread matching than current domain-plus-keyword heuristics
-- Clearer handling for ambiguous captures and low-signal groups
-- Fewer duplicate threads on reruns
-- Tests for matching edge cases and ambiguous inputs
-
-Out of scope:
-- Embedding-based clustering
-- fully automatic background consolidation
+Delivered:
+- Stronger deterministic thread matching and overlap-based clustering
+- Explicit ambiguous and low-overlap skips
+- Deterministic existing-thread overlap merges with inspectable output
+- Tests for matching edge cases, ambiguous inputs, and merge behavior
 
 ### 2. Thread Lifecycle Quality
 
-Goal:
-- Make threads feel stable over time instead of disposable snapshots.
+Status:
+- Complete
 
-Definition of done:
+Delivered:
 - Better update behavior for existing threads
-- Explicit handling for dormant vs closed threads
-- Stronger evidence and artifact views for inspecting how a thread changed
-- Safer merge or dedupe story for obviously overlapping threads
-
-Out of scope:
-- broad data migrations for old threads unless required by a concrete bug
+- Explicit dormant vs closed handling
+- Stronger evidence and artifact views for thread and state evolution
+- Safer merge and dedupe behavior for obviously overlapping threads
 
 ### 3. Local Developer Tooling
 
-Goal:
-- Give the repo real local commands for the checks that should gate changes.
+Status:
+- Complete
 
-Definition of done:
-- Documented local commands for test, lint, and typecheck
-- Commands wired into the repo in a stable, repeatable way
-- CI can map cleanly to those same commands
-
-Out of scope:
-- heavyweight infra before there is a minimal command set
+Delivered:
+- Stable local commands for test, lint, typecheck, and combined checks
+- Repo-native `Makefile` targets and CI wired to the same local contract
 
 ### 4. Triggered Consolidation
 
-Goal:
-- Reduce manual upkeep by running consolidation at the right times.
+Status:
+- Complete for the core product slice
 
-Definition of done:
-- Clear trigger model for when consolidation runs
-- Safe dry-run or preview mode where needed
-- No duplicate thread churn from repeated runs
-- Explicit audit trail for what each run changed
+Delivered:
+- Clear trigger model for capture, schedule, and manual execution
+- Safe preview behavior where needed and bounded apply behavior where safe
+- Durable audit trail for each triggered run
+- Real capture-time hook and fixed scheduled entrypoint through the shared policy layer
 
-Out of scope:
-- always-on automation without visibility into what changed
+Follow-up still worth doing:
+- Lightweight operator docs for recommended capture-hook and scheduled-run setups
+
+## Current Milestone
 
 ### 5. Retrieval and Reasoning Quality
 
@@ -104,21 +102,34 @@ Definition of done:
 Out of scope:
 - optimizing prompts before the retrieval substrate is trustworthy
 
+## Next Supporting Slice
+
+### 6. Operator Ergonomics For Triggered Runs
+
+Goal:
+- Make the shipped trigger surfaces easy to run consistently without inventing new runtime behavior.
+
+Definition of done:
+- Minimal docs for the capture hook and the scheduled trigger entrypoint
+- Clear examples for local/manual operation
+- No new trigger heuristics outside `src/mneme/triggered_consolidation.py`
+
+Out of scope:
+- background daemons or service management baked into the repo
+
 ## Sequencing
 
 Recommended order:
 
-1. Consolidation hardening
-2. Local developer tooling
-3. Thread lifecycle quality
-4. Triggered consolidation
-5. Retrieval and reasoning quality
+1. Retrieval and reasoning quality
+2. Operator ergonomics for triggered runs
+3. Future semantic matching only after retrieval quality is trustworthy
 
 Reasoning:
 
-- consolidation is the newest and weakest layer, so it should be stabilized before more automation is built on top
-- local checks should exist before the repo grows much further
-- thread lifecycle work depends on more confidence in consolidation output
+- the storage, consolidation, lifecycle, and trigger foundations are now in place
+- the highest-value next product work is improving how the substrate turns memory into useful context and answers
+- trigger behavior should stay deterministic, so the remaining trigger work is operational clarity rather than more heuristics
 
 ## Guardrails
 
@@ -138,7 +149,6 @@ Prefer:
 
 ## Open Questions
 
-- Should ambiguous consolidation results produce only artifacts first, or should they create low-confidence threads?
-- How much of consolidation should remain deterministic before introducing semantic matching?
-- What is the minimal local tooling set for this repo: `unittest`, `ruff`, `mypy`, something else?
-- When automation is added, should it run on capture, on schedule, or only by explicit command?
+- What is the next retrieval ranking step that improves usefulness without hiding evidence provenance?
+- How should thread/state evidence be presented inside context packets so downstream agents can use it without losing inspectability?
+- When semantic matching is introduced later, what deterministic guardrails must remain non-negotiable?

@@ -146,6 +146,7 @@ def handle_ask(args: argparse.Namespace) -> int:
     model_name = "local-retrieval"
     provider_name = "local"
     agent_name = "local"
+    request_id = None
 
     if not args.local_only:
         try:
@@ -164,8 +165,7 @@ def handle_ask(args: argparse.Namespace) -> int:
                 model_name = result.model
                 provider_name = result.provider
                 agent_name = result.agent
-                if result.request_id:
-                    context_packet["request_id"] = result.request_id
+                request_id = result.request_id
         else:
             text_output = f"{text_output}\n\nAI unavailable: {reason}"
 
@@ -178,6 +178,7 @@ def handle_ask(args: argparse.Namespace) -> int:
         mode="local-only" if args.local_only else "ai-if-available",
         provider=provider_name,
         agent=agent_name,
+        request_id=request_id,
     )
     conn.close()
     print(text_output)

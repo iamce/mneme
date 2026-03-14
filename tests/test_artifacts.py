@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import tempfile
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from mneme.ai import AIResult  # noqa: E402
 from mneme.artifacts import store_review_artifact  # noqa: E402
+from mneme.cli import handle_ask  # noqa: E402
 from mneme.db import connect, initialize, insert_capture  # noqa: E402
+from mneme.memory import create_thread, record_thread_state  # noqa: E402
 from mneme.tools import (  # noqa: E402
     build_review_summary,
     consolidate_recent_captures_tool,
@@ -81,6 +88,125 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertEqual(rows[0]["id"], run["artifact_id"])
         self.assertEqual(rows[0]["content"]["artifact_kind"], "consolidation_run")
         self.assertEqual(rows[0]["evidence_count"], 1)
+
+    def test_handle_ask_stores_question_answer_artifact_with_linked_evidence(self) -> None:
+        tax_note = insert_capture(
+            self.conn,
+            raw_text="Taxes are overdue and I need to file them this weekend.",
+            domains=["Money"],
+        )
+        receipt_note = insert_capture(
+            self.conn,
+            raw_text="I am still missing tax receipts needed for filing.",
+            domains=["Money"],
+        )
+        thread_id = create_thread(
+            self.conn,
+            title="File overdue taxes",
+            kind="obligation",
+            summary="Finish tax filing and gather missing receipts.",
+            domains=["Money"],
+            evidence_ids=[tax_note.id],
+            salience=0.9,
+        )
+        record_thread_state(
+            self.conn,
+            thread_id=thread_id,
+            attention="active",
+            pressure="high",
+            posture="blocked",
+            momentum="stable",
+            affect="draining",
+            horizon="now",
+            evidence_ids=[receipt_note.id],
+        )
+
+        args = argparse.Namespace(
+            db=self.db_path,
+            question="What is the status of my tax receipts?",
+            local_only=True,
+            provider="openai",
+            model="gpt-5.4",
+            agent="memory",
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = handle_ask(args)
+
+        self.assertEqual(result, 0)
+        artifact = self._latest_chat_artifact()
+
+        self.assertEqual(artifact["content"]["artifact_kind"], "question_answer")
+        self.assertEqual(artifact["content"]["response"]["mode"], "local-only")
+        self.assertEqual(artifact["content"]["response"]["provider"], "local")
+        self.assertIsNone(artifact["content"]["response"]["request_id"])
+        self.assertEqual(
+            artifact["content"]["retrieval"]["query_terms"],
+            ["status", "tax", "receipt"],
+        )
+        self.assertEqual(
+            artifact["content"]["retrieval"]["relevant_capture_ids"],
+            [receipt_note.id, tax_note.id],
+        )
+        self.assertEqual(
+            artifact["content"]["retrieval"]["thread_ids"],
+            [thread_id],
+        )
+        self.assertEqual(
+            {row["capture_id"] for row in artifact["evidence"]},
+            {tax_note.id, receipt_note.id},
+        )
+        self.assertEqual(
+            {row["note"] for row in artifact["evidence"]},
+            {
+                "relevant_capture, thread_citation",
+                "relevant_capture, thread_state_citation",
+            },
+        )
+
+    def test_handle_ask_records_ai_request_metadata_separately_from_context_packet(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Still missing tax receipts for filing.",
+            domains=["Money"],
+        )
+        args = argparse.Namespace(
+            db=self.db_path,
+            question="What is the status of my tax receipts?",
+            local_only=False,
+            provider="openai",
+            model="gpt-5.4",
+            agent="memory",
+        )
+
+        with (
+            patch("mneme.cli.provider_ready", return_value=(True, None)),
+            patch(
+                "mneme.cli.answer_question",
+                return_value=AIResult(
+                    text="Answer\n\nObservations\n\nUncertainties\n\nCitations",
+                    provider="openai",
+                    agent="memory",
+                    model="gpt-5.4",
+                    request_id="req_123",
+                ),
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            result = handle_ask(args)
+
+        self.assertEqual(result, 0)
+        artifact = self._latest_chat_artifact()
+
+        self.assertEqual(artifact["model"], "gpt-5.4")
+        self.assertEqual(artifact["content"]["response"]["provider"], "openai")
+        self.assertEqual(artifact["content"]["response"]["agent"], "memory")
+        self.assertEqual(artifact["content"]["response"]["request_id"], "req_123")
+        self.assertNotIn("request_id", artifact["content"]["context_packet"])
+
+    def _latest_chat_artifact(self) -> dict[str, object]:
+        rows = list_artifacts_tool(self.conn, artifact_type="chat_turn", limit=10)
+        self.assertEqual(len(rows), 1)
+        return get_artifact_tool(self.conn, artifact_id=rows[0]["id"])
 
 
 if __name__ == "__main__":
