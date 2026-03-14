@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mneme"
+version = "0.1.0"
+description = "A personal memory system for capture, retrieval, and AI-assisted reflection."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.0.0", "openai>=1.0.0"]
+
+[project.scripts]
+mneme = "mneme.cli:main"
+mneme-mcp = "mneme.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mneme"]
