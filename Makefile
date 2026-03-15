@@ -1,4 +1,4 @@
-.PHONY: install-dev test lint typecheck check
+.PHONY: install-dev test lint typecheck eval check
 
 install-dev:
 	python3 -m pip install -e ".[dev]"
@@ -11,5 +11,8 @@ lint:
 
 typecheck:
 	python3 -m mypy src
+
+eval:
+	PYTHONPATH=src python3 -m mneme.cli eval-retrieval
 
 check: test lint typecheck
