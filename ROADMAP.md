@@ -2,164 +2,142 @@
 
 ## Purpose
 
-This document keeps the project pointed at the next useful layers of the memory substrate without hard-coding a single agent workflow too early.
+This document is the high-level phase roadmap for mneme.
 
-## Current State
+It should answer:
 
-Shipped now:
+- what the product is trying to become
+- which major phases or milestones matter next
+- what is shipped versus still ahead
 
-- SQLite-backed memory store with captures, threads, thread states, evidence links, and artifacts
-- Local CLI commands for `init`, `capture`, `ask`, `review`, `mcp`, `consolidate`, artifact inspection, and triggered consolidation
-- MCP tools for capture, retrieval, review, thread operations, schema inspection, artifact inspection, and consolidation
-- Provider and agent abstractions for model-backed `ask`
-- Deterministic consolidation of recent unlinked captures into threads, current states, and evidence
-- Deterministic overlap-based existing-thread merges with inspectable merge artifacts
-- Durable consolidation run artifacts for apply, preview, no-op, and merge-only runs
-- Triggered consolidation policy with capture-preview behavior and schedule-safe apply behavior
-- Real capture-time hook and fixed scheduled entrypoint via the existing trigger policy surface
-- Deterministic question-answer artifacts with retrieval provenance and citation checks
-- State-aware thread ranking and broader query-term coverage before salience and recency tie-breaks
-- Thread-supported capture ranking so cited evidence can inherit support from ranked threads and states
-- Structured ranking reasons on captures and threads, exposed in local retrieval output, ask footers, and AI-backed citations
-- Repo-native local and CI checks with `make check`
-- Local test coverage for consolidation, lifecycle, artifact, trigger, and retrieval flows
-
-Current shape:
-
-- `src/mneme/db.py`: storage bootstrap and query helpers
-- `src/mneme/memory.py`: thread, state, and evidence operations
-- `src/mneme/consolidation.py`: recent-capture consolidation logic
-- `src/mneme/triggered_consolidation.py`: trigger policy and execution mode selection
-- `src/mneme/artifacts.py`: durable artifact storage and inspection helpers
-- `src/mneme/tools.py`: agent-facing tool surface
-- `src/mneme/mcp_server.py`: MCP server
-- `src/mneme/cli.py`: human-facing CLI
+It should not be used for day-to-day execution tracking. Use [PLAN.md](/Users/iamce/dev/iamce/mneme/PLAN.md) for the current working plan.
 
 ## Product Direction
 
-mneme should remain a personal memory substrate for agents and humans, not a single opinionated assistant. The system should:
+mneme should remain a personal memory substrate for humans and agents, not a single opinionated assistant.
 
-- keep raw captures canonical
-- make derived structure rebuildable
-- keep evidence traceable back to source captures
-- expose the substrate through local tools and MCP, not only through one UI or one agent policy
+The core product shape is:
 
-## Completed Milestones
+- raw captures stay canonical
+- derived structure stays rebuildable
+- evidence stays traceable back to source captures
+- local tools and MCP remain first-class interfaces
+- deterministic behavior stays ahead of opaque heuristics
 
-### 1. Consolidation Hardening
-
-Status:
-- Complete
-
-Delivered:
-- Stronger deterministic thread matching and overlap-based clustering
-- Explicit ambiguous and low-overlap skips
-- Deterministic existing-thread overlap merges with inspectable output
-- Tests for matching edge cases, ambiguous inputs, and merge behavior
-
-### 2. Thread Lifecycle Quality
-
-Status:
-- Complete
-
-Delivered:
-- Better update behavior for existing threads
-- Explicit dormant vs closed handling
-- Stronger evidence and artifact views for thread and state evolution
-- Safer merge and dedupe behavior for obviously overlapping threads
-
-### 3. Local Developer Tooling
-
-Status:
-- Complete
-
-Delivered:
-- Stable local commands for test, lint, typecheck, and combined checks
-- Repo-native `Makefile` targets and CI wired to the same local contract
-
-### 4. Triggered Consolidation
-
-Status:
-- Complete for the core product slice
-
-Delivered:
-- Clear trigger model for capture, schedule, and manual execution
-- Safe preview behavior where needed and bounded apply behavior where safe
-- Durable audit trail for each triggered run
-- Real capture-time hook and fixed scheduled entrypoint through the shared policy layer
-
-Follow-up still worth doing:
-- Lightweight operator docs for recommended capture-hook and scheduled-run setups
-
-## Current Milestone
-
-### 5. Retrieval and Reasoning Quality
-
-Goal:
-- Improve how memory is turned into useful context packets and answers.
-
-Status:
-- In progress, with the deterministic retrieval and answer-surface slice largely complete
-
-Delivered so far:
-- Better selection and ranking of relevant captures and threads
-- State-aware thread matching over status and current-state terms
-- Coverage-first retrieval ranking before salience and recency tie-breakers
-- Clearer artifact storage for question-answer runs
-- Deterministic AI citation rewriting from retrieval provenance
-- Ranking-reason inspectability in local retrieval output, ask footers, and AI-backed citations
-
-Remaining to finish this milestone cleanly:
-- A deterministic retrieval evaluation harness with fixed cases for captures, threads, fallback behavior, and citation support
-- A stable local command for running those retrieval regressions before future ranking changes
-
-Out of scope:
-- semantic matching before the deterministic retrieval path has explicit regression coverage
-- optimizing prompts before the retrieval substrate is trustworthy
-
-## Completed Supporting Slice
-
-### 6. Operator Ergonomics For Triggered Runs
-
-Status:
-- Complete
-
-Delivered:
-- Minimal operator docs for the capture hook and the scheduled trigger entrypoint
-- Clear examples for local/manual operation and scheduler wiring
-- No new trigger heuristics outside `src/mneme/triggered_consolidation.py`
-
-## Sequencing
-
-Recommended order:
-
-1. Finish retrieval and reasoning quality with a deterministic retrieval evaluation harness
-2. Future semantic matching only after the eval harness makes retrieval regressions visible
-
-Reasoning:
-
-- the storage, consolidation, lifecycle, and trigger foundations are now in place
-- the highest-value next product work is locking in retrieval quality with explicit regression cases rather than more intuition-driven tuning
-- trigger behavior should stay deterministic, so future work should improve retrieval quality rather than add trigger heuristics
-
-## Guardrails
-
-Avoid:
-
-- baking in one agent-specific worldview
-- silent heuristics that cannot be inspected later
-- one-off shortcuts that break rebuildability
-- widening schema and behavior at the same time without a narrow verification path
+## Phase Principles
 
 Prefer:
 
 - deterministic behavior first
 - explicit artifacts and evidence links
 - small vertical increments with local verification
-- splits when a module starts carrying unrelated responsibilities
+- inspectable ranking, retrieval, and consolidation behavior
 
-## Open Questions
+Avoid:
 
-- What fixed question-and-answer cases should define the first retrieval evaluation corpus?
-- What local command and output shape should make retrieval regressions fastest to review?
-- When semantic matching is introduced later, what deterministic guardrails must remain non-negotiable?
+- baking in one agent-specific workflow too early
+- silent heuristics that cannot be inspected later
+- widening schema and behavior at the same time without a narrow verification path
+- prompt-driven polish before the substrate is trustworthy
+
+## Phase Roadmap
+
+### Phase 1: Memory Substrate Foundations
+
+Status:
+- Shipped
+
+Included:
+
+- SQLite-backed captures, threads, thread states, evidence links, and artifacts
+- Core CLI and MCP surfaces
+- Deterministic consolidation and merge flows
+- Durable artifacts for consolidation and question-answer runs
+- Repo-native local and CI checks
+
+### Phase 2: Deterministic Retrieval Baseline
+
+Status:
+- Shipped
+
+Included:
+
+- Capture and thread retrieval for `ask`
+- State-aware thread ranking
+- Coverage-first ranking before salience and recency tie-breaks
+- Thread-supported capture ranking
+- Deterministic citation rewriting from retrieval provenance
+- Ranking-reason inspectability in local output, ask footers, and AI-backed citations
+- Built-in retrieval eval corpus with stable `mneme eval-retrieval` and `make eval` commands
+
+### Phase 3: Semantic Recall and Query Quality
+
+Status:
+- Current next phase
+
+Intent:
+
+- improve recall beyond deterministic keyword-style matching
+- preserve deterministic regression visibility while widening retrieval behavior
+- make semantic improvements measurable against the existing eval baseline
+
+First focus:
+
+- wording-mismatch recall where the query and the stored capture refer to the same thing with different vocabulary
+
+Likely scope:
+
+- semantic or hybrid candidate expansion with explicit guardrails
+- eval-first coverage for paraphrase, synonym, and alias-style retrieval gaps
+- expanded retrieval eval coverage for semantic and hybrid cases
+- comparison surfaces that make regressions obvious before rollout
+
+### Phase 4: Agent and Operator Ergonomics
+
+Status:
+- Later
+
+Intent:
+
+- make the substrate easier to run, inspect, and integrate repeatedly
+
+Likely scope:
+
+- stronger operator docs and recommended setups
+- cleaner recurring workflows around capture, review, consolidation, and inspection
+- better usability for humans and agents without changing the core substrate model
+
+### Phase 5: Operational Maturity and Portability
+
+Status:
+- Later
+
+Intent:
+
+- make mneme easier to trust as a long-lived personal system
+
+Likely scope:
+
+- backup, export, restore, or migration improvements
+- safer long-running operation and maintenance workflows
+- clearer boundaries for versioning and rebuildability
+
+## Current Posture
+
+- Phases 1 and 2 are effectively complete.
+- Phase 3 is the active next phase.
+- Phase 3 should begin with wording-mismatch recall, not a broad semantic rewrite.
+- Near-term execution should stay eval-first before implementation widens behavior.
+
+## Current Guardrails
+
+- Treat `mneme eval-retrieval` and `make eval` as the regression gate for retrieval changes.
+- Add fixed eval cases before changing retrieval behavior when practical.
+- Do not widen into semantic matching without keeping deterministic guardrails visible.
+- Do not optimize prompts ahead of substrate quality and inspectability.
+
+## Open Phase Questions
+
+- Which wording-mismatch classes should Phase 3 cover first: paraphrases, synonyms, aliases, or cross-domain phrasing shifts?
+- What deterministic guardrails must remain non-negotiable once semantic retrieval exists?
+- Which ergonomics improvements belong in a phase versus in ongoing maintenance?
