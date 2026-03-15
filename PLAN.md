@@ -19,6 +19,7 @@ Keep it operational. Keep it short. Update it as work moves.
 - The deterministic retrieval baseline is in place and protected by `mneme eval-retrieval` and `make eval`.
 - The built-in retrieval eval corpus was recently expanded with ranking, citation-shape, and tie-break regression cases.
 - Phase 3 is now framed to start with wording-mismatch recall under eval-first guardrails.
+- The built-in retrieval eval corpus now includes wording-gap cases for paraphrase, synonym, and alias mismatches.
 
 ## Recently Completed
 
@@ -28,10 +29,11 @@ Keep it operational. Keep it short. Update it as work moves.
 - `ROADMAP.md` was reshaped into a phase roadmap
 - `PLAN.md` was introduced as the resumable execution plan
 - the first concrete Phase 3 problem was chosen: wording-mismatch recall
+- Phase 3 Chunk 1 landed locally: wording-mismatch eval coverage for paraphrase, synonym, and alias gaps
 
 ## Current Objective
 
-Keep the deterministic retrieval baseline stable while starting Phase 3 with an eval-first wording-mismatch slice.
+Keep the deterministic retrieval baseline stable while using the new wording-gap eval cases to drive the first retrieval-side improvement.
 
 ## Active Tracks
 
@@ -72,7 +74,7 @@ Recommended next planning chunk:
 ### 4. Phase 3 Chunk 1: Wording-Mismatch Eval Coverage
 
 Status:
-- Ready
+- Complete
 
 Goal:
 
@@ -84,6 +86,11 @@ Definition of done:
 - the cases clearly state expected capture and thread behavior
 - `make eval` and `make check` stay green
 
+Completed scope:
+
+- built-in wording-gap cases now cover paraphrase, synonym, and alias mismatches
+- each gap case records the current deterministic baseline and the future target retrieval behavior
+
 Guardrails:
 
 - keep existing deterministic retrieval behavior visible as the baseline
@@ -93,16 +100,16 @@ Guardrails:
 
 ## Candidate Next Chunks
 
-### A. Phase 3 Chunk 1: Wording-Mismatch Eval Coverage
+### A. Phase 3 Chunk 2: First Wording-Mismatch Candidate Expansion
 
 Recommendation:
 - highest-priority next chunk
 
 Definition of done:
 
-- built-in eval cases for the first wording-mismatch retrieval gaps
-- explicit expected rankings and citation behavior where applicable
-- no retrieval behavior changes yet
+- improve one wording-mismatch class against the new eval corpus
+- keep ranking reasons and citation support inspectable
+- preserve the existing non-wording regression cases
 
 ### B. Retrieval Eval Ergonomics
 

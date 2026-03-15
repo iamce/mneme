@@ -20,6 +20,7 @@ class RetrievalEvalResult:
     name: str
     passed: bool
     errors: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
 
 
 def run_retrieval_eval_cases(
@@ -39,6 +40,8 @@ def render_retrieval_eval_report(results: list[RetrievalEvalResult]) -> str:
     ]
     for result in results:
         lines.append(f"- {result.name}: {'ok' if result.passed else 'fail'}")
+        for note in result.notes:
+            lines.append(f"  {note}")
         for error in result.errors:
             lines.append(f"  {error}")
     return "\n".join(lines)
@@ -46,6 +49,7 @@ def render_retrieval_eval_report(results: list[RetrievalEvalResult]) -> str:
 
 def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
     errors: list[str] = []
+    notes: list[str] = []
     with tempfile.TemporaryDirectory() as tempdir:
         conn = connect(Path(tempdir) / "mneme.db")
         initialize(conn)
@@ -152,6 +156,29 @@ def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
                 f"got {str(bool(packet.get('used_recent_fallback'))).lower()}"
             )
 
+        if case.known_gap is not None:
+            notes.extend(
+                _render_known_gap_notes(
+                    label=case.known_gap.label,
+                    target_relevant_capture_refs=case.known_gap.target_relevant_capture_refs,
+                    target_thread_refs=case.known_gap.target_thread_refs,
+                    target_used_recent_fallback=case.known_gap.target_used_recent_fallback,
+                )
+            )
+            if (
+                actual_capture_refs == case.known_gap.target_relevant_capture_refs
+                and actual_thread_refs == case.known_gap.target_thread_refs
+                and (
+                    case.known_gap.target_used_recent_fallback is None
+                    or bool(packet.get("used_recent_fallback"))
+                    == case.known_gap.target_used_recent_fallback
+                )
+            ):
+                errors.append(
+                    "known gap target is already satisfied; "
+                    "promote this case to a fixed regression expectation"
+                )
+
         if case.citation is not None:
             cited_capture_ids = [
                 *[capture_ids[ref] for ref in case.citation.ai_cited_capture_refs],
@@ -227,6 +254,7 @@ def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
         name=case.name,
         passed=not errors,
         errors=tuple(errors),
+        notes=tuple(notes),
     )
 
 
@@ -256,6 +284,27 @@ def _render_ai_citation_text(capture_ids: list[str]) -> str:
 
 def _render_values(values: tuple[str, ...]) -> str:
     return ", ".join(values) if values else "none"
+
+
+def _render_known_gap_notes(
+    *,
+    label: str,
+    target_relevant_capture_refs: tuple[str, ...],
+    target_thread_refs: tuple[str, ...],
+    target_used_recent_fallback: bool | None,
+) -> list[str]:
+    notes = [f"known gap: {label}"]
+    notes.append(
+        "target relevant captures: "
+        f"{_render_values(target_relevant_capture_refs)}"
+    )
+    notes.append(f"target threads: {_render_values(target_thread_refs)}")
+    if target_used_recent_fallback is not None:
+        notes.append(
+            "target used_recent_fallback: "
+            f"{str(target_used_recent_fallback).lower()}"
+        )
+    return notes
 
 
 def _ordered_unique(values: list[str]) -> list[str]:

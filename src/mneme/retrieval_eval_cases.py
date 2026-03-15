@@ -52,6 +52,14 @@ class CitationExpectation:
 
 
 @dataclass(frozen=True)
+class KnownRetrievalGap:
+    label: str
+    target_relevant_capture_refs: tuple[str, ...] = ()
+    target_thread_refs: tuple[str, ...] = ()
+    target_used_recent_fallback: bool | None = None
+
+
+@dataclass(frozen=True)
 class RetrievalEvalCase:
     name: str
     question: str
@@ -62,6 +70,7 @@ class RetrievalEvalCase:
     thread_states: tuple[ThreadStateSeed, ...] = ()
     expected_thread_refs: tuple[str, ...] = ()
     citation: CitationExpectation | None = None
+    known_gap: KnownRetrievalGap | None = None
 
 
 def built_in_retrieval_eval_cases() -> tuple[RetrievalEvalCase, ...]:
@@ -427,5 +436,122 @@ def built_in_retrieval_eval_cases() -> tuple[RetrievalEvalCase, ...]:
             expected_relevant_capture_refs=("newer_capture", "older_capture"),
             expected_thread_refs=("newer_thread", "older_thread"),
             used_recent_fallback=False,
+        ),
+        RetrievalEvalCase(
+            name="wording_gap_paraphrase_vehicle_registration",
+            question="What about my car papers?",
+            captures=(
+                CaptureSeed(
+                    ref="recent_distractor",
+                    raw_text="Need to buy groceries after work.",
+                    domains=("Home",),
+                    age_minutes=5,
+                ),
+                CaptureSeed(
+                    ref="vehicle_capture",
+                    raw_text="Need to renew vehicle registration before July.",
+                    domains=("Home",),
+                    age_minutes=40,
+                ),
+            ),
+            threads=(
+                ThreadSeed(
+                    ref="vehicle_thread",
+                    title="Renew vehicle registration",
+                    kind="obligation",
+                    summary="Handle the registration renewal paperwork.",
+                    domains=("Home",),
+                    salience=0.8,
+                    evidence_capture_refs=("vehicle_capture",),
+                    age_minutes=40,
+                ),
+            ),
+            expected_relevant_capture_refs=("recent_distractor", "vehicle_capture"),
+            expected_thread_refs=(),
+            used_recent_fallback=True,
+            known_gap=KnownRetrievalGap(
+                label="paraphrase",
+                target_relevant_capture_refs=("vehicle_capture",),
+                target_thread_refs=("vehicle_thread",),
+                target_used_recent_fallback=False,
+            ),
+        ),
+        RetrievalEvalCase(
+            name="wording_gap_synonym_doctor_visit",
+            question="What about my physician checkup?",
+            captures=(
+                CaptureSeed(
+                    ref="recent_distractor",
+                    raw_text="Replace the kitchen light bulb.",
+                    domains=("Home",),
+                    age_minutes=3,
+                ),
+                CaptureSeed(
+                    ref="doctor_capture",
+                    raw_text="Need to schedule a doctor appointment before June.",
+                    domains=("Body",),
+                    age_minutes=35,
+                ),
+            ),
+            threads=(
+                ThreadSeed(
+                    ref="doctor_thread",
+                    title="Schedule doctor appointment",
+                    kind="obligation",
+                    summary="Book the annual doctor visit.",
+                    domains=("Body",),
+                    salience=0.7,
+                    evidence_capture_refs=("doctor_capture",),
+                    age_minutes=35,
+                ),
+            ),
+            expected_relevant_capture_refs=("recent_distractor", "doctor_capture"),
+            expected_thread_refs=(),
+            used_recent_fallback=True,
+            known_gap=KnownRetrievalGap(
+                label="synonym",
+                target_relevant_capture_refs=("doctor_capture",),
+                target_thread_refs=("doctor_thread",),
+                target_used_recent_fallback=False,
+            ),
+        ),
+        RetrievalEvalCase(
+            name="wording_gap_alias_robert_bob",
+            question="What do I owe Bob?",
+            captures=(
+                CaptureSeed(
+                    ref="recent_distractor",
+                    raw_text="Drop off the mail on the way home.",
+                    domains=("Home",),
+                    age_minutes=2,
+                ),
+                CaptureSeed(
+                    ref="robert_capture",
+                    raw_text="Need to pay Robert back for concert tickets.",
+                    domains=("Social",),
+                    age_minutes=30,
+                ),
+            ),
+            threads=(
+                ThreadSeed(
+                    ref="robert_thread",
+                    title="Pay Robert back",
+                    kind="obligation",
+                    summary="Settle the concert ticket reimbursement.",
+                    domains=("Social",),
+                    salience=0.6,
+                    evidence_capture_refs=("robert_capture",),
+                    age_minutes=30,
+                ),
+            ),
+            expected_relevant_capture_refs=("recent_distractor", "robert_capture"),
+            expected_thread_refs=(),
+            used_recent_fallback=True,
+            known_gap=KnownRetrievalGap(
+                label="alias",
+                target_relevant_capture_refs=("robert_capture",),
+                target_thread_refs=("robert_thread",),
+                target_used_recent_fallback=False,
+            ),
         ),
     )
