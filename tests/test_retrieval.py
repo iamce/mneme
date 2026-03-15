@@ -77,10 +77,29 @@ class RetrievalTests(unittest.TestCase):
         self.assertFalse(packet["used_recent_fallback"])
         self.assertEqual(packet["relevant_captures"][0]["id"], receipt_note.id)
         self.assertEqual(packet["relevant_captures"][0]["matched_terms"], ["tax", "receipt"])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "direct_match_count": 2,
+                "thread_support_count": 0,
+                "matched_terms": ["tax", "receipt"],
+            },
+        )
 
         self.assertEqual(packet["threads"][0]["id"], tax_thread_id)
         self.assertEqual(packet["threads"][0]["matched_terms"], ["tax", "receipt"])
         self.assertEqual(packet["threads"][0]["current_state"]["pressure"], "high")
+        self.assertEqual(
+            packet["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "surface_match_count": 2,
+                "state_match_count": 0,
+                "evidence_match_count": 2,
+                "matched_terms": ["tax", "receipt"],
+            },
+        )
         self.assertEqual(
             {row["capture_id"] for row in packet["threads"][0]["citations"]},
             {tax_note.id, receipt_note.id},
@@ -93,6 +112,8 @@ class RetrievalTests(unittest.TestCase):
         rendered = render_context_packet(packet)
         self.assertIn("Relevant threads:", rendered)
         self.assertIn("File overdue taxes", rendered)
+        self.assertIn("ranking: matched_terms=tax, receipt; direct=2; thread_support=0", rendered)
+        self.assertIn("ranking: matched_terms=tax, receipt; surface=2; state=0; evidence=2", rendered)
         self.assertIn("citations:", rendered)
         self.assertIn(receipt_note.id, rendered)
 
@@ -108,6 +129,16 @@ class RetrievalTests(unittest.TestCase):
         self.assertTrue(packet["used_recent_fallback"])
         self.assertEqual(packet["relevant_captures"][0]["id"], capture.id)
         self.assertEqual(packet["relevant_captures"][0]["matched_terms"], [])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 0,
+                "direct_match_count": 0,
+                "thread_support_count": 0,
+                "matched_terms": [],
+                "fallback": "recent",
+            },
+        )
         self.assertEqual(packet["threads"], [])
 
     def test_context_packet_ranks_threads_by_current_state_terms(self) -> None:
@@ -159,11 +190,32 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(packet["relevant_captures"][0]["matched_terms"], [])
         self.assertEqual(packet["relevant_captures"][0]["thread_matched_terms"], ["blocked", "now"])
         self.assertEqual(packet["relevant_captures"][0]["supporting_thread_ids"], [winning_thread_id])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "direct_match_count": 0,
+                "thread_support_count": 2,
+                "matched_terms": ["blocked", "now"],
+            },
+        )
         self.assertEqual(packet["threads"][0]["id"], winning_thread_id)
         self.assertEqual(packet["threads"][0]["matched_terms"], ["blocked", "now"])
+        self.assertEqual(
+            packet["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "surface_match_count": 0,
+                "state_match_count": 2,
+                "evidence_match_count": 0,
+                "matched_terms": ["blocked", "now"],
+            },
+        )
         rendered = render_context_packet(packet)
         self.assertIn("thread support: blocked, now via", rendered)
+        self.assertIn("ranking: matched_terms=blocked, now; direct=0; thread_support=2", rendered)
         self.assertIn("matched: blocked, now", rendered)
+        self.assertIn("ranking: matched_terms=blocked, now; surface=0; state=2; evidence=0", rendered)
         self.assertIn("posture=blocked", rendered)
 
     def test_context_packet_ranks_threads_by_thread_status(self) -> None:

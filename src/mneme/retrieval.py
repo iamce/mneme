@@ -130,6 +130,9 @@ def render_capture(row: Any) -> str:
         if supporting_thread_ids:
             support = f"{support} via {', '.join(supporting_thread_ids)}"
         lines.append(f"  {support}")
+    ranking_reason = payload.get("ranking_reason")
+    if ranking_reason:
+        lines.append(f"  ranking: {_render_capture_ranking_reason(ranking_reason)}")
     lines.append(f"  {payload['raw_text']}")
     return "\n".join(lines)
 
@@ -178,6 +181,12 @@ def _rank_relevant_captures(
                         "matched_terms": matched_terms,
                         "thread_matched_terms": thread_matched_terms,
                         "supporting_thread_ids": thread_support["thread_ids"],
+                        "ranking_reason": {
+                            "matched_term_count": len(combined_matched_terms),
+                            "direct_match_count": len(matched_terms),
+                            "thread_support_count": len(thread_matched_terms),
+                            "matched_terms": combined_matched_terms,
+                        },
                     },
                 )
             )
@@ -195,6 +204,15 @@ def _rank_relevant_captures(
                 "domains": row["domains"] or "",
                 "raw_text": row["raw_text"],
                 "matched_terms": [],
+                "thread_matched_terms": [],
+                "supporting_thread_ids": [],
+                "ranking_reason": {
+                    "matched_term_count": 0,
+                    "direct_match_count": 0,
+                    "thread_support_count": 0,
+                    "matched_terms": [],
+                    "fallback": "recent",
+                },
             }
             for row in fallback
         ],
@@ -252,6 +270,13 @@ def _rank_relevant_threads(conn: Any, *, query_terms: list[str]) -> list[dict[st
                     "matched_terms": matched_terms,
                     "current_state": current_state,
                     "citations": citations,
+                    "ranking_reason": {
+                        "matched_term_count": len(matched_terms),
+                        "surface_match_count": len(surface_matches),
+                        "state_match_count": len(state_matches),
+                        "evidence_match_count": len(evidence_matches),
+                        "matched_terms": matched_terms,
+                    },
                 },
             )
         )
@@ -367,6 +392,9 @@ def _render_thread(row: dict[str, Any]) -> list[str]:
         lines.append(f"  matched: {', '.join(row['matched_terms'])}")
     if row.get("summary"):
         lines.append(f"  summary: {row['summary']}")
+    ranking_reason = row.get("ranking_reason")
+    if ranking_reason:
+        lines.append(f"  ranking: {_render_thread_ranking_reason(ranking_reason)}")
     state = row.get("current_state")
     if state is not None:
         lines.append(
@@ -418,3 +446,24 @@ def _normalize_token(token: str) -> str:
     if len(token) > 4 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
         return token[:-1]
     return token
+
+
+def _render_capture_ranking_reason(reason: dict[str, Any]) -> str:
+    if reason.get("fallback"):
+        return f"fallback={reason['fallback']}"
+    matched_terms = ", ".join(reason.get("matched_terms", [])) or "none"
+    return (
+        f"matched_terms={matched_terms}; "
+        f"direct={reason.get('direct_match_count', 0)}; "
+        f"thread_support={reason.get('thread_support_count', 0)}"
+    )
+
+
+def _render_thread_ranking_reason(reason: dict[str, Any]) -> str:
+    matched_terms = ", ".join(reason.get("matched_terms", [])) or "none"
+    return (
+        f"matched_terms={matched_terms}; "
+        f"surface={reason.get('surface_match_count', 0)}; "
+        f"state={reason.get('state_match_count', 0)}; "
+        f"evidence={reason.get('evidence_match_count', 0)}"
+    )
