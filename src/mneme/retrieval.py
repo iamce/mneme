@@ -34,17 +34,19 @@ STOPWORDS = {
 def build_context_packet(conn: Any, question: str, *, days: int = 14) -> dict[str, Any]:
     query_terms = _extract_query_terms(question)
     recent = recent_captures(conn, limit=4, days=days)
+    threads = _rank_relevant_threads(conn, query_terms=query_terms)
     capture_candidates = _merge_capture_candidates(
         search_captures(conn, question, limit=12),
         recent_captures(conn, limit=12, days=days),
+        _capture_candidates_from_threads(threads),
     )
     relevant_captures, used_recent_fallback = _rank_relevant_captures(
         capture_candidates,
         query_terms=query_terms,
         days=days,
         conn=conn,
+        threads=threads,
     )
-    threads = _rank_relevant_threads(conn, query_terms=query_terms)
     activity = domain_activity(conn, days=days)
 
     return {
@@ -118,9 +120,18 @@ def render_capture(row: Any) -> str:
     domains = payload["domains"] or "none"
     details = f"- [{payload['id']}] {payload['created_at']} | domains: {domains}"
     matched_terms = payload.get("matched_terms") or []
+    thread_matched_terms = payload.get("thread_matched_terms") or []
     if matched_terms:
         details = f"{details} | matched: {', '.join(matched_terms)}"
-    return f"{details}\n  {payload['raw_text']}"
+    lines = [details]
+    if thread_matched_terms:
+        supporting_thread_ids = payload.get("supporting_thread_ids") or []
+        support = f"thread support: {', '.join(thread_matched_terms)}"
+        if supporting_thread_ids:
+            support = f"{support} via {', '.join(supporting_thread_ids)}"
+        lines.append(f"  {support}")
+    lines.append(f"  {payload['raw_text']}")
+    return "\n".join(lines)
 
 
 def _merge_capture_candidates(*groups: list[Any]) -> list[dict[str, Any]]:
@@ -137,14 +148,25 @@ def _rank_relevant_captures(
     query_terms: list[str],
     days: int,
     conn: Any,
+    threads: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], bool]:
     scored = []
+    capture_thread_support = _capture_thread_support(threads)
     for row in rows:
         matched_terms = _matched_terms(query_terms, row["raw_text"], row.get("domains", ""))
-        if matched_terms:
+        thread_support = capture_thread_support.get(
+            row["id"],
+            {"matched_terms": [], "thread_ids": []},
+        )
+        thread_matched_terms = [
+            term for term in query_terms if term in thread_support["matched_terms"] and term not in matched_terms
+        ]
+        if matched_terms or thread_matched_terms:
             scored.append(
                 (
+                    len(matched_terms) + min(1, len(thread_matched_terms)),
                     len(matched_terms),
+                    len(thread_matched_terms),
                     row["created_at"],
                     row["id"],
                     {
@@ -153,13 +175,15 @@ def _rank_relevant_captures(
                         "domains": row.get("domains") or "",
                         "raw_text": row["raw_text"],
                         "matched_terms": matched_terms,
+                        "thread_matched_terms": thread_matched_terms,
+                        "supporting_thread_ids": thread_support["thread_ids"],
                     },
                 )
             )
 
     if scored:
-        scored.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
-        return [item[3] for item in scored[:6]], False
+        scored.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]), reverse=True)
+        return [item[5] for item in scored[:6]], False
 
     fallback = recent_captures(conn, limit=6, days=days)
     return (
@@ -232,6 +256,38 @@ def _rank_relevant_threads(conn: Any, *, query_terms: list[str]) -> list[dict[st
 
     scored.sort(key=lambda item: item[0], reverse=True)
     return [item[1] for item in scored[:4]]
+
+
+def _capture_candidates_from_threads(threads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for thread in threads:
+        for citation in thread.get("citations", []):
+            rows.append(
+                {
+                    "id": citation["capture_id"],
+                    "created_at": citation["created_at"],
+                    "domains": thread.get("domains") or "",
+                    "raw_text": citation["raw_text"],
+                }
+            )
+    return rows
+
+
+def _capture_thread_support(threads: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    support: dict[str, dict[str, Any]] = {}
+    for thread in threads:
+        matched_terms = list(thread.get("matched_terms", []))
+        for citation in thread.get("citations", []):
+            capture_support = support.setdefault(
+                citation["capture_id"],
+                {"matched_terms": [], "thread_ids": []},
+            )
+            for term in matched_terms:
+                if term not in capture_support["matched_terms"]:
+                    capture_support["matched_terms"].append(term)
+            if thread["id"] not in capture_support["thread_ids"]:
+                capture_support["thread_ids"].append(thread["id"])
+    return support
 
 
 def _select_thread_citations(bundle: dict[str, Any], *, query_terms: list[str]) -> list[dict[str, Any]]:
