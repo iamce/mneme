@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Iterable
 
 from .db import create_artifact
 from .memory import link_evidence
+
+
+CAPTURE_ID_PATTERN = re.compile(r"\bcap_[0-9a-f]{12}\b")
 
 
 def list_artifacts(
@@ -121,6 +125,11 @@ def store_chat_artifact(
     request_id: str | None = None,
 ) -> str:
     retrieval_summary, evidence_rows = summarize_question_answer_provenance(context_packet)
+    citation_summary = summarize_answer_citations(
+        text_output=text_output,
+        retrieval_summary=retrieval_summary,
+        provider=provider,
+    )
     artifact_id = create_artifact(
         conn,
         artifact_type="chat_turn",
@@ -137,6 +146,7 @@ def store_chat_artifact(
                 "agent": agent,
                 "model": model,
                 "request_id": request_id,
+                "citation_check": citation_summary,
             },
             "retrieval": retrieval_summary,
         },
@@ -299,3 +309,57 @@ def summarize_question_answer_provenance(
         },
         evidence,
     )
+
+
+def summarize_answer_citations(
+    *,
+    text_output: str,
+    retrieval_summary: dict[str, Any],
+    provider: str,
+) -> dict[str, Any]:
+    expected_capture_ids = _ordered_unique(
+        [
+            *retrieval_summary.get("relevant_capture_ids", []),
+            *retrieval_summary.get("citation_capture_ids", []),
+        ]
+    )
+    if provider == "local":
+        return {
+            "status": "not_applicable",
+            "cited_capture_ids": [],
+            "supported_capture_ids": [],
+            "unsupported_capture_ids": [],
+        }
+
+    cited_capture_ids = _ordered_unique(CAPTURE_ID_PATTERN.findall(text_output))
+    expected_capture_id_set = set(expected_capture_ids)
+    supported_capture_ids = [
+        capture_id for capture_id in cited_capture_ids if capture_id in expected_capture_id_set
+    ]
+    unsupported_capture_ids = [
+        capture_id for capture_id in cited_capture_ids if capture_id not in expected_capture_id_set
+    ]
+
+    status = "ok"
+    if unsupported_capture_ids:
+        status = "unsupported_citations_present"
+    elif not cited_capture_ids:
+        status = "no_citations_found"
+
+    return {
+        "status": status,
+        "cited_capture_ids": cited_capture_ids,
+        "supported_capture_ids": supported_capture_ids,
+        "unsupported_capture_ids": unsupported_capture_ids,
+    }
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
