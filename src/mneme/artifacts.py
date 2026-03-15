@@ -120,7 +120,7 @@ def store_chat_artifact(
     agent: str,
     request_id: str | None = None,
 ) -> str:
-    retrieval_summary, evidence_rows = _summarize_question_answer_provenance(context_packet)
+    retrieval_summary, evidence_rows = summarize_question_answer_provenance(context_packet)
     artifact_id = create_artifact(
         conn,
         artifact_type="chat_turn",
@@ -229,7 +229,7 @@ def store_consolidation_run_artifact(
     return artifact_id
 
 
-def _summarize_question_answer_provenance(
+def summarize_question_answer_provenance(
     context_packet: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     evidence_rows: dict[str, dict[str, Any]] = {}

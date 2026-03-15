@@ -5,9 +5,14 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 from .agents import default_agent_name
-from .artifacts import store_chat_artifact, store_review_artifact
+from .artifacts import (
+    store_chat_artifact,
+    store_review_artifact,
+    summarize_question_answer_provenance,
+)
 from .ai import answer_question, default_model_name, default_provider_name, provider_ready, resolve_ai_config
 from .db import (
     connect,
@@ -142,6 +147,7 @@ def handle_capture(args: argparse.Namespace) -> int:
 def handle_ask(args: argparse.Namespace) -> int:
     _, conn = ensure_db(args.db)
     context_packet = build_context_packet(conn, args.question)
+    retrieval_summary, _ = summarize_question_answer_provenance(context_packet)
     text_output = render_context_packet(context_packet)
     model_name = "local-retrieval"
     provider_name = "local"
@@ -169,7 +175,7 @@ def handle_ask(args: argparse.Namespace) -> int:
         else:
             text_output = f"{text_output}\n\nAI unavailable: {reason}"
 
-    store_chat_artifact(
+    artifact_id = store_chat_artifact(
         conn,
         question=args.question,
         context_packet=context_packet,
@@ -182,7 +188,42 @@ def handle_ask(args: argparse.Namespace) -> int:
     )
     conn.close()
     print(text_output)
+    print("")
+    print(_render_ask_footer(artifact_id=artifact_id, retrieval_summary=retrieval_summary))
     return 0
+
+
+def _render_ask_footer(*, artifact_id: str, retrieval_summary: dict[str, Any]) -> str:
+    supporting_capture_ids = _ordered_unique(
+        [
+            *retrieval_summary.get("relevant_capture_ids", []),
+            *retrieval_summary.get("citation_capture_ids", []),
+        ]
+    )
+    lines = [f"artifact_id: {artifact_id}"]
+    lines.append(
+        "supporting_capture_ids: "
+        + (", ".join(supporting_capture_ids) if supporting_capture_ids else "none")
+    )
+    thread_ids = retrieval_summary.get("thread_ids", [])
+    if thread_ids:
+        lines.append(f"relevant_thread_ids: {', '.join(thread_ids)}")
+    lines.append(
+        "used_recent_fallback: "
+        + ("true" if retrieval_summary.get("used_recent_fallback") else "false")
+    )
+    return "\n".join(lines)
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
 
 
 def handle_mcp(args: argparse.Namespace) -> int:
