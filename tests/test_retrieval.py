@@ -154,9 +154,15 @@ class RetrievalTests(unittest.TestCase):
 
         packet = build_context_packet(self.conn, "What is blocked right now?", days=30)
 
+        self.assertFalse(packet["used_recent_fallback"])
+        self.assertEqual(packet["relevant_captures"][0]["id"], stalled_capture.id)
+        self.assertEqual(packet["relevant_captures"][0]["matched_terms"], [])
+        self.assertEqual(packet["relevant_captures"][0]["thread_matched_terms"], ["blocked", "now"])
+        self.assertEqual(packet["relevant_captures"][0]["supporting_thread_ids"], [winning_thread_id])
         self.assertEqual(packet["threads"][0]["id"], winning_thread_id)
         self.assertEqual(packet["threads"][0]["matched_terms"], ["blocked", "now"])
         rendered = render_context_packet(packet)
+        self.assertIn("thread support: blocked, now via", rendered)
         self.assertIn("matched: blocked, now", rendered)
         self.assertIn("posture=blocked", rendered)
 
@@ -187,6 +193,10 @@ class RetrievalTests(unittest.TestCase):
 
         packet = build_context_packet(self.conn, "What is dormant?", days=30)
 
+        self.assertFalse(packet["used_recent_fallback"])
+        self.assertEqual(packet["relevant_captures"][0]["id"], capture.id)
+        self.assertEqual(packet["relevant_captures"][0]["thread_matched_terms"], ["dormant"])
+        self.assertEqual(packet["relevant_captures"][0]["supporting_thread_ids"], [dormant_thread_id])
         self.assertEqual(packet["threads"][0]["id"], dormant_thread_id)
         self.assertEqual(packet["threads"][0]["matched_terms"], ["dormant"])
 
