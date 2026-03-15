@@ -2,69 +2,17 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .artifacts import summarize_answer_citations, summarize_question_answer_provenance
 from .db import connect, initialize, insert_capture
-from .memory import create_thread, record_thread_state
+from .memory import create_thread, record_thread_state, update_thread
 from .retrieval import build_context_packet
-
-
-@dataclass(frozen=True)
-class CaptureSeed:
-    ref: str
-    raw_text: str
-    domains: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class ThreadSeed:
-    ref: str
-    title: str
-    kind: str
-    summary: str = ""
-    domains: tuple[str, ...] = ()
-    status: str = "open"
-    salience: float = 0.5
-    confidence: float = 0.5
-    evidence_capture_refs: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class ThreadStateSeed:
-    ref: str
-    thread_ref: str
-    attention: str
-    pressure: str
-    posture: str
-    momentum: str
-    affect: str
-    horizon: str
-    confidence: float = 0.5
-    evidence_capture_refs: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class CitationExpectation:
-    ai_cited_capture_refs: tuple[str, ...] = ()
-    ai_unsupported_capture_ids: tuple[str, ...] = ()
-    status: str = "ok"
-    cited_thread_refs: tuple[str, ...] = ()
-    cited_state_refs: tuple[str, ...] = ()
-    unsupported_capture_ids: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class RetrievalEvalCase:
-    name: str
-    question: str
-    captures: tuple[CaptureSeed, ...]
-    expected_relevant_capture_refs: tuple[str, ...]
-    used_recent_fallback: bool
-    threads: tuple[ThreadSeed, ...] = ()
-    thread_states: tuple[ThreadStateSeed, ...] = ()
-    expected_thread_refs: tuple[str, ...] = ()
-    citation: CitationExpectation | None = None
+from .retrieval_eval_cases import (
+    RetrievalEvalCase,
+    built_in_retrieval_eval_cases,
+)
 
 
 @dataclass(frozen=True)
@@ -72,157 +20,6 @@ class RetrievalEvalResult:
     name: str
     passed: bool
     errors: tuple[str, ...] = ()
-
-
-def built_in_retrieval_eval_cases() -> tuple[RetrievalEvalCase, ...]:
-    return (
-        RetrievalEvalCase(
-            name="tax_receipts_direct_match",
-            question="What is the status of my tax receipts?",
-            captures=(
-                CaptureSeed(
-                    ref="tax_note",
-                    raw_text="Taxes are overdue and I need to file them this weekend.",
-                    domains=("Money",),
-                ),
-                CaptureSeed(
-                    ref="receipt_note",
-                    raw_text="I am still missing tax receipts needed for filing.",
-                    domains=("Money",),
-                ),
-                CaptureSeed(
-                    ref="groceries_note",
-                    raw_text="Need to buy groceries and refill soap.",
-                    domains=("Home",),
-                ),
-            ),
-            threads=(
-                ThreadSeed(
-                    ref="tax_thread",
-                    title="File overdue taxes",
-                    kind="obligation",
-                    summary="Finish tax filing and gather missing receipts.",
-                    domains=("Money",),
-                    salience=0.9,
-                    evidence_capture_refs=("tax_note",),
-                ),
-            ),
-            thread_states=(
-                ThreadStateSeed(
-                    ref="tax_state",
-                    thread_ref="tax_thread",
-                    attention="active",
-                    pressure="high",
-                    posture="blocked",
-                    momentum="stable",
-                    affect="draining",
-                    horizon="now",
-                    evidence_capture_refs=("receipt_note",),
-                ),
-            ),
-            expected_relevant_capture_refs=("receipt_note", "tax_note"),
-            expected_thread_refs=("tax_thread",),
-            used_recent_fallback=False,
-            citation=CitationExpectation(
-                ai_cited_capture_refs=("receipt_note",),
-                status="ok",
-                cited_thread_refs=("tax_thread",),
-                cited_state_refs=("tax_state",),
-            ),
-        ),
-        RetrievalEvalCase(
-            name="blocked_now_thread_support",
-            question="What is blocked right now?",
-            captures=(
-                CaptureSeed(
-                    ref="stalled_capture",
-                    raw_text="Tax filing is still waiting on missing receipts.",
-                    domains=("Money",),
-                ),
-                CaptureSeed(
-                    ref="other_capture",
-                    raw_text="Blocked on a package delivery.",
-                    domains=("Home",),
-                ),
-            ),
-            threads=(
-                ThreadSeed(
-                    ref="filing_thread",
-                    title="Finish filing",
-                    kind="obligation",
-                    summary="Close out the filing workflow.",
-                    domains=("Money",),
-                    salience=0.4,
-                    evidence_capture_refs=("stalled_capture",),
-                ),
-                ThreadSeed(
-                    ref="kitchen_thread",
-                    title="Restock kitchen",
-                    kind="obligation",
-                    summary="Buy missing supplies.",
-                    domains=("Home",),
-                    salience=0.9,
-                    evidence_capture_refs=("other_capture",),
-                ),
-            ),
-            thread_states=(
-                ThreadStateSeed(
-                    ref="filing_state",
-                    thread_ref="filing_thread",
-                    attention="active",
-                    pressure="high",
-                    posture="blocked",
-                    momentum="stable",
-                    affect="draining",
-                    horizon="now",
-                    evidence_capture_refs=("stalled_capture",),
-                ),
-            ),
-            expected_relevant_capture_refs=("stalled_capture", "other_capture"),
-            expected_thread_refs=("filing_thread", "kitchen_thread"),
-            used_recent_fallback=False,
-            citation=CitationExpectation(
-                ai_cited_capture_refs=("stalled_capture",),
-                status="ok",
-                cited_thread_refs=("filing_thread",),
-                cited_state_refs=("filing_state",),
-            ),
-        ),
-        RetrievalEvalCase(
-            name="recent_fallback_no_match",
-            question="Meditation retreat planning",
-            captures=(
-                CaptureSeed(
-                    ref="recent_capture",
-                    raw_text="Need to buy groceries and refill soap.",
-                    domains=("Home",),
-                ),
-            ),
-            expected_relevant_capture_refs=("recent_capture",),
-            expected_thread_refs=(),
-            used_recent_fallback=True,
-        ),
-        RetrievalEvalCase(
-            name="unsupported_ai_citation",
-            question="What is the status of my tax receipts?",
-            captures=(
-                CaptureSeed(
-                    ref="supported_capture",
-                    raw_text="Still missing tax receipts for filing.",
-                    domains=("Money",),
-                ),
-            ),
-            expected_relevant_capture_refs=("supported_capture",),
-            expected_thread_refs=(),
-            used_recent_fallback=False,
-            citation=CitationExpectation(
-                ai_cited_capture_refs=("supported_capture",),
-                ai_unsupported_capture_ids=("cap_deadbeefcafe",),
-                status="unsupported_citations_present",
-                unsupported_capture_ids=("cap_deadbeefcafe",),
-            ),
-        ),
-    )
 
 
 def run_retrieval_eval_cases(
@@ -261,8 +58,14 @@ def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
                 raw_text=capture_seed.raw_text,
                 domains=list(capture_seed.domains),
             )
+            if capture_seed.age_minutes:
+                conn.execute(
+                    "UPDATE captures SET created_at = ? WHERE id = ?",
+                    (_timestamp_for_age(capture_seed.age_minutes), capture.id),
+                )
             capture_ids[capture_seed.ref] = capture.id
             capture_refs_by_id[capture.id] = capture_seed.ref
+        conn.commit()
 
         thread_ids: dict[str, str] = {}
         thread_refs_by_id: dict[str, str] = {}
@@ -280,6 +83,7 @@ def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
             )
             thread_ids[thread_seed.ref] = thread_id
             thread_refs_by_id[thread_id] = thread_seed.ref
+        conn.commit()
 
         state_ids: dict[str, str] = {}
         state_refs_by_id: dict[str, str] = {}
@@ -298,6 +102,27 @@ def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
             )
             state_ids[state_seed.ref] = state_id
             state_refs_by_id[state_id] = state_seed.ref
+            if state_seed.age_minutes:
+                conn.execute(
+                    "UPDATE thread_states SET observed_at = ? WHERE id = ?",
+                    (_timestamp_for_age(state_seed.age_minutes), state_id),
+                )
+        conn.commit()
+        for thread_seed in case.threads:
+            if not thread_seed.age_minutes:
+                continue
+            timestamp = _timestamp_for_age(thread_seed.age_minutes)
+            thread_id = thread_ids[thread_seed.ref]
+            update_thread(conn, thread_id=thread_id, last_seen_at=timestamp)
+            conn.execute(
+                """
+                UPDATE threads
+                SET created_at = ?, updated_at = ?, first_seen_at = ?
+                WHERE id = ?
+                """,
+                (timestamp, timestamp, timestamp, thread_id),
+            )
+        conn.commit()
 
         packet = build_context_packet(conn, case.question, days=30)
         retrieval_summary, _ = summarize_question_answer_provenance(packet)
@@ -337,11 +162,38 @@ def _run_retrieval_eval_case(case: RetrievalEvalCase) -> RetrievalEvalResult:
                 retrieval_summary=retrieval_summary,
                 provider="openai",
             )
+            expected_cited_capture_ids = tuple(
+                _ordered_unique(
+                    [
+                        *[capture_ids[ref] for ref in case.citation.ai_cited_capture_refs],
+                        *case.citation.ai_unsupported_capture_ids,
+                    ]
+                )
+            )
+            expected_supported_capture_refs = (
+                case.citation.supported_capture_refs or case.citation.ai_cited_capture_refs
+            )
+            actual_supported_capture_refs = tuple(
+                capture_refs_by_id[capture_id]
+                for capture_id in citation_summary.get("supported_capture_ids", [])
+            )
             if citation_summary["status"] != case.citation.status:
                 errors.append(
                     f"citation status: expected {case.citation.status}; "
                     f"got {citation_summary['status']}"
                 )
+            _append_mismatch(
+                errors,
+                label="cited captures",
+                actual=tuple(citation_summary.get("cited_capture_ids", [])),
+                expected=expected_cited_capture_ids,
+            )
+            _append_mismatch(
+                errors,
+                label="supported cited captures",
+                actual=actual_supported_capture_refs,
+                expected=expected_supported_capture_refs,
+            )
             actual_cited_thread_refs = tuple(
                 thread_refs_by_id[thread_id]
                 for thread_id in citation_summary.get("cited_thread_ids", [])
@@ -404,3 +256,20 @@ def _render_ai_citation_text(capture_ids: list[str]) -> str:
 
 def _render_values(values: tuple[str, ...]) -> str:
     return ", ".join(values) if values else "none"
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
+
+
+def _timestamp_for_age(age_minutes: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=age_minutes)).replace(
+        microsecond=0
+    ).isoformat()
