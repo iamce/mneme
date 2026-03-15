@@ -158,6 +158,25 @@ class ArtifactToolsTests(unittest.TestCase):
             [thread_id],
         )
         self.assertEqual(
+            artifact["content"]["context_packet"]["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "direct_match_count": 2,
+                "thread_support_count": 0,
+                "matched_terms": ["tax", "receipt"],
+            },
+        )
+        self.assertEqual(
+            artifact["content"]["context_packet"]["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "surface_match_count": 2,
+                "state_match_count": 0,
+                "evidence_match_count": 2,
+                "matched_terms": ["tax", "receipt"],
+            },
+        )
+        self.assertEqual(
             {row["capture_id"] for row in artifact["evidence"]},
             {tax_note.id, receipt_note.id},
         )
