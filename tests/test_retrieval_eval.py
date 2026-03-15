@@ -34,13 +34,13 @@ class RetrievalEvalTests(unittest.TestCase):
         rendered = stdout.getvalue()
 
         self.assertEqual(result, 0)
-        self.assertIn("retrieval_eval_cases: 4", rendered)
-        self.assertIn("passed: 4", rendered)
+        case_names = [case.name for case in built_in_retrieval_eval_cases()]
+
+        self.assertIn(f"retrieval_eval_cases: {len(case_names)}", rendered)
+        self.assertIn(f"passed: {len(case_names)}", rendered)
         self.assertIn("failed: 0", rendered)
-        self.assertIn("- tax_receipts_direct_match: ok", rendered)
-        self.assertIn("- blocked_now_thread_support: ok", rendered)
-        self.assertIn("- recent_fallback_no_match: ok", rendered)
-        self.assertIn("- unsupported_ai_citation: ok", rendered)
+        for case_name in case_names:
+            self.assertIn(f"- {case_name}: ok", rendered)
 
 
 if __name__ == "__main__":
