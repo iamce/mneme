@@ -262,10 +262,19 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertIn("Answer", rendered)
         self.assertIn(f"artifact_id: {artifact['id']}", rendered)
         self.assertIn("used_recent_fallback: false", rendered)
+        self.assertIn(
+            f"- {receipt_note.id} | relevant capture; thread_state supports {thread_id}/{state_id}",
+            rendered,
+        )
+        self.assertIn("Still missing tax receipts for filing.", rendered)
         self.assertIn(f"cited_capture_ids: {receipt_note.id}", rendered)
         self.assertIn("citation_check: ok", rendered)
         self.assertIn(f"cited_thread_ids: {thread_id}", rendered)
         self.assertIn(f"cited_state_ids: {state_id}", rendered)
+        self.assertIn(
+            f"- {receipt_note.id} | relevant capture; thread_state supports {thread_id}/{state_id}",
+            artifact["text_output"],
+        )
 
     def test_handle_ask_flags_unsupported_ai_citations(self) -> None:
         supported = insert_capture(
@@ -325,6 +334,12 @@ class ArtifactToolsTests(unittest.TestCase):
             rendered,
         )
         self.assertIn("citation_check: unsupported_citations_present", rendered)
+        self.assertIn(f"- {supported.id} | relevant capture", rendered)
+        self.assertIn("Still missing tax receipts for filing.", rendered)
+        self.assertIn(
+            f"- {unsupported_capture_id} | unsupported by retrieval",
+            rendered,
+        )
         self.assertIn(f"unsupported_capture_ids: {unsupported_capture_id}", rendered)
 
     def test_handle_ask_footer_reports_recent_fallback_when_no_matches_exist(self) -> None:

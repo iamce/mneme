@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import default_agent_name
+from .answer_formatting import format_ai_answer_citations
 from .artifacts import (
     summarize_answer_citations,
     store_chat_artifact,
@@ -168,7 +169,17 @@ def handle_ask(args: argparse.Namespace) -> int:
             except Exception as exc:
                 text_output = f"{text_output}\n\nAI error: {exc}"
             else:
-                text_output = result.text
+                raw_text_output = result.text
+                raw_citation_summary = summarize_answer_citations(
+                    text_output=raw_text_output,
+                    retrieval_summary=retrieval_summary,
+                    provider=result.provider,
+                )
+                text_output = format_ai_answer_citations(
+                    text_output=raw_text_output,
+                    context_packet=context_packet,
+                    citation_summary=raw_citation_summary,
+                )
                 model_name = result.model
                 provider_name = result.provider
                 agent_name = result.agent
