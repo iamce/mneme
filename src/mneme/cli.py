@@ -239,6 +239,12 @@ def _render_ask_footer(
             )
         )
         lines.append(f"citation_check: {citation_summary['status']}")
+        cited_thread_ids = citation_summary.get("cited_thread_ids", [])
+        if cited_thread_ids:
+            lines.append(f"cited_thread_ids: {', '.join(cited_thread_ids)}")
+        cited_state_ids = citation_summary.get("cited_state_ids", [])
+        if cited_state_ids:
+            lines.append(f"cited_state_ids: {', '.join(cited_state_ids)}")
         unsupported_capture_ids = citation_summary.get("unsupported_capture_ids", [])
         if unsupported_capture_ids:
             lines.append(f"unsupported_capture_ids: {', '.join(unsupported_capture_ids)}")
