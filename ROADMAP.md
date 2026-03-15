@@ -17,8 +17,12 @@ Shipped now:
 - Durable consolidation run artifacts for apply, preview, no-op, and merge-only runs
 - Triggered consolidation policy with capture-preview behavior and schedule-safe apply behavior
 - Real capture-time hook and fixed scheduled entrypoint via the existing trigger policy surface
+- Deterministic question-answer artifacts with retrieval provenance and citation checks
+- State-aware thread ranking and broader query-term coverage before salience and recency tie-breaks
+- Thread-supported capture ranking so cited evidence can inherit support from ranked threads and states
+- Structured ranking reasons on captures and threads, exposed in local retrieval output, ask footers, and AI-backed citations
 - Repo-native local and CI checks with `make check`
-- Local test coverage for consolidation, lifecycle, artifact, and trigger flows
+- Local test coverage for consolidation, lifecycle, artifact, trigger, and retrieval flows
 
 Current shape:
 
@@ -94,12 +98,23 @@ Follow-up still worth doing:
 Goal:
 - Improve how memory is turned into useful context packets and answers.
 
-Definition of done:
+Status:
+- In progress, with the deterministic retrieval and answer-surface slice largely complete
+
+Delivered so far:
 - Better selection and ranking of relevant captures and threads
+- State-aware thread matching over status and current-state terms
+- Coverage-first retrieval ranking before salience and recency tie-breakers
 - Clearer artifact storage for question-answer runs
-- Better citation or evidence presentation in local and MCP flows
+- Deterministic AI citation rewriting from retrieval provenance
+- Ranking-reason inspectability in local retrieval output, ask footers, and AI-backed citations
+
+Remaining to finish this milestone cleanly:
+- A deterministic retrieval evaluation harness with fixed cases for captures, threads, fallback behavior, and citation support
+- A stable local command for running those retrieval regressions before future ranking changes
 
 Out of scope:
+- semantic matching before the deterministic retrieval path has explicit regression coverage
 - optimizing prompts before the retrieval substrate is trustworthy
 
 ## Completed Supporting Slice
@@ -118,13 +133,13 @@ Delivered:
 
 Recommended order:
 
-1. Retrieval and reasoning quality
-2. Future semantic matching only after retrieval quality is trustworthy
+1. Finish retrieval and reasoning quality with a deterministic retrieval evaluation harness
+2. Future semantic matching only after the eval harness makes retrieval regressions visible
 
 Reasoning:
 
 - the storage, consolidation, lifecycle, and trigger foundations are now in place
-- the highest-value next product work is improving how the substrate turns memory into useful context and answers
+- the highest-value next product work is locking in retrieval quality with explicit regression cases rather than more intuition-driven tuning
 - trigger behavior should stay deterministic, so future work should improve retrieval quality rather than add trigger heuristics
 
 ## Guardrails
@@ -145,6 +160,6 @@ Prefer:
 
 ## Open Questions
 
-- What is the next retrieval ranking step that improves usefulness without hiding evidence provenance?
-- How should thread/state evidence be presented inside context packets so downstream agents can use it without losing inspectability?
+- What fixed question-and-answer cases should define the first retrieval evaluation corpus?
+- What local command and output shape should make retrieval regressions fastest to review?
 - When semantic matching is introduced later, what deterministic guardrails must remain non-negotiable?
