@@ -142,6 +142,10 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertEqual(artifact["content"]["response"]["provider"], "local")
         self.assertIsNone(artifact["content"]["response"]["request_id"])
         self.assertEqual(
+            artifact["content"]["response"]["citation_check"]["status"],
+            "not_applicable",
+        )
+        self.assertEqual(
             artifact["content"]["retrieval"]["query_terms"],
             ["status", "tax", "receipt"],
         )
@@ -171,9 +175,10 @@ class ArtifactToolsTests(unittest.TestCase):
         )
         self.assertIn(f"relevant_thread_ids: {thread_id}", rendered)
         self.assertIn("used_recent_fallback: false", rendered)
+        self.assertNotIn("cited_capture_ids:", rendered)
 
     def test_handle_ask_records_ai_request_metadata_separately_from_context_packet(self) -> None:
-        insert_capture(
+        capture = insert_capture(
             self.conn,
             raw_text="Still missing tax receipts for filing.",
             domains=["Money"],
@@ -193,7 +198,12 @@ class ArtifactToolsTests(unittest.TestCase):
             patch(
                 "mneme.cli.answer_question",
                 return_value=AIResult(
-                    text="Answer\n\nObservations\n\nUncertainties\n\nCitations",
+                    text=(
+                        "Answer\nThe latest missing receipt is still unresolved.\n\n"
+                        "Observations\n- Receipt tracking is incomplete.\n\n"
+                        "Uncertainties\n- None.\n\n"
+                        f"Citations\n- {capture.id}"
+                    ),
                     provider="openai",
                     agent="memory",
                     model="gpt-5.4",
@@ -213,9 +223,78 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertEqual(artifact["content"]["response"]["agent"], "memory")
         self.assertEqual(artifact["content"]["response"]["request_id"], "req_123")
         self.assertNotIn("request_id", artifact["content"]["context_packet"])
+        self.assertEqual(
+            artifact["content"]["response"]["citation_check"],
+            {
+                "status": "ok",
+                "cited_capture_ids": [capture.id],
+                "supported_capture_ids": [capture.id],
+                "unsupported_capture_ids": [],
+            },
+        )
         self.assertIn("Answer", rendered)
         self.assertIn(f"artifact_id: {artifact['id']}", rendered)
         self.assertIn("used_recent_fallback: false", rendered)
+        self.assertIn(f"cited_capture_ids: {capture.id}", rendered)
+        self.assertIn("citation_check: ok", rendered)
+
+    def test_handle_ask_flags_unsupported_ai_citations(self) -> None:
+        supported = insert_capture(
+            self.conn,
+            raw_text="Still missing tax receipts for filing.",
+            domains=["Money"],
+        )
+        unsupported_capture_id = "cap_deadbeefcafe"
+        args = argparse.Namespace(
+            db=self.db_path,
+            question="What is the status of my tax receipts?",
+            local_only=False,
+            provider="openai",
+            model="gpt-5.4",
+            agent="memory",
+        )
+
+        stdout = io.StringIO()
+        with (
+            patch("mneme.cli.provider_ready", return_value=(True, None)),
+            patch(
+                "mneme.cli.answer_question",
+                return_value=AIResult(
+                    text=(
+                        "Answer\nNeed to keep chasing receipts.\n\n"
+                        "Observations\n- One receipt is still missing.\n\n"
+                        "Uncertainties\n- Exact filing date.\n\n"
+                        f"Citations\n- {supported.id}\n- {unsupported_capture_id}"
+                    ),
+                    provider="openai",
+                    agent="memory",
+                    model="gpt-5.4",
+                    request_id="req_456",
+                ),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            result = handle_ask(args)
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        artifact = self._latest_chat_artifact()
+
+        self.assertEqual(
+            artifact["content"]["response"]["citation_check"],
+            {
+                "status": "unsupported_citations_present",
+                "cited_capture_ids": [supported.id, unsupported_capture_id],
+                "supported_capture_ids": [supported.id],
+                "unsupported_capture_ids": [unsupported_capture_id],
+            },
+        )
+        self.assertIn(
+            f"cited_capture_ids: {supported.id}, {unsupported_capture_id}",
+            rendered,
+        )
+        self.assertIn("citation_check: unsupported_citations_present", rendered)
+        self.assertIn(f"unsupported_capture_ids: {unsupported_capture_id}", rendered)
 
     def test_handle_ask_footer_reports_recent_fallback_when_no_matches_exist(self) -> None:
         recent = insert_capture(

@@ -9,6 +9,7 @@ from typing import Any
 
 from .agents import default_agent_name
 from .artifacts import (
+    summarize_answer_citations,
     store_chat_artifact,
     store_review_artifact,
     summarize_question_answer_provenance,
@@ -187,13 +188,29 @@ def handle_ask(args: argparse.Namespace) -> int:
         request_id=request_id,
     )
     conn.close()
+    citation_summary = summarize_answer_citations(
+        text_output=text_output,
+        retrieval_summary=retrieval_summary,
+        provider=provider_name,
+    )
     print(text_output)
     print("")
-    print(_render_ask_footer(artifact_id=artifact_id, retrieval_summary=retrieval_summary))
+    print(
+        _render_ask_footer(
+            artifact_id=artifact_id,
+            retrieval_summary=retrieval_summary,
+            citation_summary=citation_summary,
+        )
+    )
     return 0
 
 
-def _render_ask_footer(*, artifact_id: str, retrieval_summary: dict[str, Any]) -> str:
+def _render_ask_footer(
+    *,
+    artifact_id: str,
+    retrieval_summary: dict[str, Any],
+    citation_summary: dict[str, Any],
+) -> str:
     supporting_capture_ids = _ordered_unique(
         [
             *retrieval_summary.get("relevant_capture_ids", []),
@@ -212,6 +229,19 @@ def _render_ask_footer(*, artifact_id: str, retrieval_summary: dict[str, Any]) -
         "used_recent_fallback: "
         + ("true" if retrieval_summary.get("used_recent_fallback") else "false")
     )
+    if citation_summary.get("status") != "not_applicable":
+        lines.append(
+            "cited_capture_ids: "
+            + (
+                ", ".join(citation_summary.get("cited_capture_ids", []))
+                if citation_summary.get("cited_capture_ids")
+                else "none"
+            )
+        )
+        lines.append(f"citation_check: {citation_summary['status']}")
+        unsupported_capture_ids = citation_summary.get("unsupported_capture_ids", [])
+        if unsupported_capture_ids:
+            lines.append(f"unsupported_capture_ids: {', '.join(unsupported_capture_ids)}")
     return "\n".join(lines)
 
 
