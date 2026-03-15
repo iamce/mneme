@@ -176,6 +176,24 @@ def recent_captures(
 
 def search_captures(conn: sqlite3.Connection, query: str, *, limit: int = 8) -> list[sqlite3.Row]:
     tokens = [token.lower() for token in query.split() if len(token.strip()) >= 3]
+    return search_captures_for_terms(conn, tokens=tokens, limit=limit)
+
+
+def search_captures_for_terms(
+    conn: sqlite3.Connection,
+    *,
+    tokens: Iterable[str],
+    limit: int = 8,
+) -> list[sqlite3.Row]:
+    normalized_tokens: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        cleaned = token.strip().lower()
+        if len(cleaned) < 3 or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized_tokens.append(cleaned)
+    tokens = normalized_tokens
     if not tokens:
         return recent_captures(conn, limit=limit)
 

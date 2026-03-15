@@ -544,14 +544,12 @@ def built_in_retrieval_eval_cases() -> tuple[RetrievalEvalCase, ...]:
                     age_minutes=30,
                 ),
             ),
-            expected_relevant_capture_refs=("recent_distractor", "robert_capture"),
-            expected_thread_refs=(),
-            used_recent_fallback=True,
-            known_gap=KnownRetrievalGap(
-                label="alias",
-                target_relevant_capture_refs=("robert_capture",),
-                target_thread_refs=("robert_thread",),
-                target_used_recent_fallback=False,
+            expected_relevant_capture_refs=("robert_capture",),
+            expected_thread_refs=("robert_thread",),
+            used_recent_fallback=False,
+            citation=CitationExpectation(
+                ai_cited_capture_refs=("robert_capture",),
+                cited_thread_refs=("robert_thread",),
             ),
         ),
     )
