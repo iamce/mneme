@@ -22,6 +22,7 @@ Keep it operational. Keep it short. Update it as work moves.
 - The built-in retrieval eval corpus now includes wording-gap cases for paraphrase, synonym, and alias mismatches.
 - Alias-style wording mismatches now improve deterministically via nickname expansion with inspectable ranking output.
 - Synonym-style wording mismatches now improve deterministically for the physician/checkup retrieval case.
+- Paraphrase-style wording mismatches now improve deterministically for the car-papers and vehicle-registration retrieval case.
 
 ## Recently Completed
 
@@ -34,10 +35,11 @@ Keep it operational. Keep it short. Update it as work moves.
 - Phase 3 Chunk 1 landed locally: wording-mismatch eval coverage for paraphrase, synonym, and alias gaps
 - Phase 3 Chunk 2 landed locally: alias-style wording mismatch retrieval now passes as a fixed regression case
 - Phase 3 Chunk 3 landed locally: synonym-style wording mismatch retrieval now passes as a fixed regression case
+- Phase 3 Chunk 4 landed locally: paraphrase-style wording mismatch retrieval now passes as a fixed regression case
 
 ## Current Objective
 
-Keep the deterministic retrieval baseline stable while using the remaining paraphrase wording-gap case to drive the next retrieval-side improvement.
+Keep the deterministic retrieval baseline stable while choosing the next measured recall gap beyond the initial alias, synonym, and paraphrase set.
 
 ## Active Tracks
 
@@ -155,12 +157,34 @@ Completed scope:
 Recommendation:
 - highest-priority next chunk
 
+Status:
+- Complete
+
+Completed focus:
+
+- deterministic paraphrase expansion for the car-papers and vehicle-registration wording-gap case
+
 Definition of done:
 
 - improve the remaining paraphrase wording-gap case against the eval corpus
 - keep alias and synonym coverage plus the existing non-wording regressions green
 - keep ranking reasons and citation support inspectable
-### D. Retrieval Eval Ergonomics
+
+Completed scope:
+
+- deterministic paraphrase expansion now covers the car-papers and vehicle-registration retrieval case
+- paraphrase matches remain inspectable in ranking reasons and thread citation output
+
+### D. Next Phase 3 Recall Slice
+
+Use this if:
+- a new wording-mismatch class is chosen from real misses or a broader semantic need becomes concrete
+
+Definition of done:
+
+- the next recall gap is defined with fixed eval coverage before behavior changes
+
+### E. Retrieval Eval Ergonomics
 
 Use this if:
 - the corpus grows enough that review output becomes noisy or hard to diff
@@ -169,7 +193,7 @@ Definition of done:
 
 - clearer eval output shape without changing retrieval behavior
 
-### E. Operator Ergonomics Follow-Up
+### F. Operator Ergonomics Follow-Up
 
 Use this if:
 - product priority is smoother real-world operation rather than wider retrieval behavior
