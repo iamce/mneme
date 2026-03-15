@@ -139,7 +139,7 @@ class RetrievalTests(unittest.TestCase):
 
         other_capture = insert_capture(
             self.conn,
-            raw_text="Kitchen supplies need to be restocked soon.",
+            raw_text="Blocked on a package delivery.",
             domains=["Home"],
         )
         create_thread(
@@ -199,6 +199,43 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(packet["relevant_captures"][0]["supporting_thread_ids"], [dormant_thread_id])
         self.assertEqual(packet["threads"][0]["id"], dormant_thread_id)
         self.assertEqual(packet["threads"][0]["matched_terms"], ["dormant"])
+
+    def test_context_packet_prefers_broader_thread_match_over_more_salient_partial_match(self) -> None:
+        partial_capture = insert_capture(
+            self.conn,
+            raw_text="Taxes need attention this week.",
+            domains=["Money"],
+        )
+        full_capture = insert_capture(
+            self.conn,
+            raw_text="Still missing tax receipts for filing.",
+            domains=["Money"],
+        )
+
+        partial_thread_id = create_thread(
+            self.conn,
+            title="File taxes",
+            kind="obligation",
+            summary="Handle the filing soon.",
+            domains=["Money"],
+            evidence_ids=[partial_capture.id],
+            salience=0.95,
+        )
+        full_thread_id = create_thread(
+            self.conn,
+            title="Paperwork cleanup",
+            kind="obligation",
+            summary="Administrative loose ends.",
+            domains=["Money"],
+            evidence_ids=[full_capture.id],
+            salience=0.2,
+        )
+
+        packet = build_context_packet(self.conn, "What about tax receipts?", days=30)
+
+        self.assertEqual(packet["threads"][0]["id"], full_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["tax", "receipt"])
+        self.assertEqual(packet["threads"][1]["id"], partial_thread_id)
 
 
 if __name__ == "__main__":
