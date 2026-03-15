@@ -102,34 +102,30 @@ Definition of done:
 Out of scope:
 - optimizing prompts before the retrieval substrate is trustworthy
 
-## Next Supporting Slice
+## Completed Supporting Slice
 
 ### 6. Operator Ergonomics For Triggered Runs
 
-Goal:
-- Make the shipped trigger surfaces easy to run consistently without inventing new runtime behavior.
+Status:
+- Complete
 
-Definition of done:
-- Minimal docs for the capture hook and the scheduled trigger entrypoint
-- Clear examples for local/manual operation
+Delivered:
+- Minimal operator docs for the capture hook and the scheduled trigger entrypoint
+- Clear examples for local/manual operation and scheduler wiring
 - No new trigger heuristics outside `src/mneme/triggered_consolidation.py`
-
-Out of scope:
-- background daemons or service management baked into the repo
 
 ## Sequencing
 
 Recommended order:
 
 1. Retrieval and reasoning quality
-2. Operator ergonomics for triggered runs
-3. Future semantic matching only after retrieval quality is trustworthy
+2. Future semantic matching only after retrieval quality is trustworthy
 
 Reasoning:
 
 - the storage, consolidation, lifecycle, and trigger foundations are now in place
 - the highest-value next product work is improving how the substrate turns memory into useful context and answers
-- trigger behavior should stay deterministic, so the remaining trigger work is operational clarity rather than more heuristics
+- trigger behavior should stay deterministic, so future work should improve retrieval quality rather than add trigger heuristics
 
 ## Guardrails
 
