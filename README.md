@@ -148,6 +148,58 @@ Consolidate recent unlinked captures into threads and states:
 mneme consolidate --days 7
 ```
 
+## Triggered Consolidation
+
+`mneme` already ships two operator-facing trigger entrypoints:
+
+- a capture-time preview hook via `mneme capture --trigger-consolidation`
+- a scheduled trigger via `mneme consolidate-trigger --trigger schedule`
+
+The trigger policy stays deterministic:
+
+- capture-triggered runs preview only and never mutate threads
+- scheduled runs apply automatically only when the plan has no review-required skips
+- both paths store an artifact so you can inspect what happened
+
+Preview triggered consolidation during capture:
+
+```bash
+mneme capture "Still missing tax receipts for filing." --domain Money --trigger-consolidation
+```
+
+That prints:
+
+- `trigger_execution_mode`
+- `trigger_decision_reason`
+- `trigger_artifact_id`
+
+Inspect the resulting artifact:
+
+```bash
+mneme artifact art_123456789abc
+```
+
+Run the scheduled trigger entrypoint directly:
+
+```bash
+mneme consolidate-trigger --trigger schedule --days 7 --limit 25
+```
+
+Use the same command from `cron` or another scheduler:
+
+```cron
+0 * * * * cd /path/to/mneme && /usr/bin/env mneme consolidate-trigger --trigger schedule --days 7 --limit 25 >> /tmp/mneme-consolidate.log 2>&1
+```
+
+Recommended operator pattern:
+
+- use `mneme capture --trigger-consolidation` in interactive capture flows when you want immediate preview artifacts
+- use `mneme consolidate-trigger --trigger schedule` from a scheduler for bounded automatic applies
+- inspect the printed `artifact_id` whenever the trigger previews instead of applying
+- use `mneme artifacts --model local-consolidation` to review recent trigger outcomes
+
+There is no separate daemon in the repo. The supported automation surface is the existing CLI entrypoint plus your scheduler of choice.
+
 ## Local Checks
 
 Run the repo-native checks with:
