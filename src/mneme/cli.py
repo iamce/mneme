@@ -32,6 +32,7 @@ from .tools import (
     run_triggered_consolidation_tool,
 )
 from .retrieval import render_ranking_highlights
+from .retrieval_eval import render_retrieval_eval_report, run_retrieval_eval_cases
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument("--model", default=default_model_name())
     ask_parser.add_argument("--agent", default=default_agent_name())
     ask_parser.set_defaults(handler=handle_ask)
+
+    retrieval_eval_parser = subparsers.add_parser(
+        "eval-retrieval",
+        help="Run deterministic retrieval regression cases.",
+    )
+    retrieval_eval_parser.set_defaults(handler=handle_eval_retrieval)
 
     mcp_parser = subparsers.add_parser("mcp", help="Run the mneme MCP server over stdio.")
     mcp_parser.set_defaults(handler=handle_mcp)
@@ -282,6 +289,12 @@ def handle_mcp(args: argparse.Namespace) -> int:
 
     run_mcp_server()
     return 0
+
+
+def handle_eval_retrieval(args: argparse.Namespace) -> int:
+    results = run_retrieval_eval_cases()
+    print(render_retrieval_eval_report(results))
+    return 0 if all(result.passed for result in results) else 1
 
 
 def handle_review(args: argparse.Namespace) -> int:
