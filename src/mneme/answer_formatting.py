@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .retrieval import render_capture_ranking_reason
+
 
 _CITATIONS_HEADER_PATTERN = re.compile(r"(?m)^Citations\s*$")
 
@@ -30,6 +32,9 @@ def format_ai_answer_citations(
             detail_parts.insert(0, "relevant capture")
         detail = "; ".join(detail_parts) if detail_parts else "retrieval evidence"
         citation_lines.append(f"- {capture_id} | {detail}")
+        ranking_reason = evidence.get("capture_ranking_reason")
+        if ranking_reason:
+            citation_lines.append(f"  ranking: {ranking_reason}")
         if evidence["raw_text"]:
             citation_lines.append(f"  {_summarize_capture_text(evidence['raw_text'])}")
 
@@ -46,10 +51,18 @@ def _build_capture_evidence_index(context_packet: dict[str, Any]) -> dict[str, d
     for row in context_packet.get("relevant_captures", []):
         entry = evidence_index.setdefault(
             row["id"],
-            {"raw_text": row["raw_text"], "is_relevant_capture": False, "provenance": []},
+            {
+                "raw_text": row["raw_text"],
+                "is_relevant_capture": False,
+                "provenance": [],
+                "capture_ranking_reason": None,
+            },
         )
         entry["raw_text"] = entry["raw_text"] or row["raw_text"]
         entry["is_relevant_capture"] = True
+        ranking_reason = row.get("ranking_reason")
+        if ranking_reason and entry["capture_ranking_reason"] is None:
+            entry["capture_ranking_reason"] = render_capture_ranking_reason(ranking_reason)
 
     for thread in context_packet.get("threads", []):
         thread_id = thread["id"]
@@ -60,6 +73,7 @@ def _build_capture_evidence_index(context_packet: dict[str, Any]) -> dict[str, d
                     "raw_text": citation.get("raw_text", ""),
                     "is_relevant_capture": False,
                     "provenance": [],
+                    "capture_ranking_reason": None,
                 },
             )
             entry["raw_text"] = entry["raw_text"] or citation.get("raw_text", "")

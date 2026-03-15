@@ -295,6 +295,10 @@ class ArtifactToolsTests(unittest.TestCase):
             f"- {receipt_note.id} | relevant capture; thread_state supports {thread_id}/{state_id}",
             rendered,
         )
+        self.assertIn(
+            "  ranking: matched_terms=tax, receipt; direct=2; thread_support=0",
+            rendered,
+        )
         self.assertIn("Still missing tax receipts for filing.", rendered)
         self.assertIn(
             f"top_capture_ranking: {receipt_note.id} | matched_terms=tax, receipt; direct=2; "
@@ -374,6 +378,10 @@ class ArtifactToolsTests(unittest.TestCase):
         )
         self.assertIn("citation_check: unsupported_citations_present", rendered)
         self.assertIn(f"- {supported.id} | relevant capture", rendered)
+        self.assertIn(
+            "  ranking: matched_terms=tax, receipt; direct=2; thread_support=0",
+            rendered,
+        )
         self.assertIn("Still missing tax receipts for filing.", rendered)
         self.assertIn(
             f"- {unsupported_capture_id} | unsupported by retrieval",

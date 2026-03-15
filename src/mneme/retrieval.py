@@ -121,14 +121,14 @@ def render_ranking_highlights(context_packet: dict[str, Any]) -> list[str]:
     if capture is not None:
         lines.append(
             "top_capture_ranking: "
-            f"{capture['id']} | {_render_capture_ranking_reason(capture['ranking_reason'])}"
+            f"{capture['id']} | {render_capture_ranking_reason(capture['ranking_reason'])}"
         )
 
     thread = _top_ranked_row(context_packet.get("threads", []))
     if thread is not None:
         lines.append(
             "top_thread_ranking: "
-            f"{thread['id']} | {_render_thread_ranking_reason(thread['ranking_reason'])}"
+            f"{thread['id']} | {render_thread_ranking_reason(thread['ranking_reason'])}"
         )
 
     return lines
@@ -151,7 +151,7 @@ def render_capture(row: Any) -> str:
         lines.append(f"  {support}")
     ranking_reason = payload.get("ranking_reason")
     if ranking_reason:
-        lines.append(f"  ranking: {_render_capture_ranking_reason(ranking_reason)}")
+        lines.append(f"  ranking: {render_capture_ranking_reason(ranking_reason)}")
     lines.append(f"  {payload['raw_text']}")
     return "\n".join(lines)
 
@@ -413,7 +413,7 @@ def _render_thread(row: dict[str, Any]) -> list[str]:
         lines.append(f"  summary: {row['summary']}")
     ranking_reason = row.get("ranking_reason")
     if ranking_reason:
-        lines.append(f"  ranking: {_render_thread_ranking_reason(ranking_reason)}")
+        lines.append(f"  ranking: {render_thread_ranking_reason(ranking_reason)}")
     state = row.get("current_state")
     if state is not None:
         lines.append(
@@ -474,7 +474,7 @@ def _top_ranked_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
-def _render_capture_ranking_reason(reason: dict[str, Any]) -> str:
+def render_capture_ranking_reason(reason: dict[str, Any]) -> str:
     if reason.get("fallback"):
         return f"fallback={reason['fallback']}"
     matched_terms = ", ".join(reason.get("matched_terms", [])) or "none"
@@ -485,7 +485,7 @@ def _render_capture_ranking_reason(reason: dict[str, Any]) -> str:
     )
 
 
-def _render_thread_ranking_reason(reason: dict[str, Any]) -> str:
+def render_thread_ranking_reason(reason: dict[str, Any]) -> str:
     matched_terms = ", ".join(reason.get("matched_terms", [])) or "none"
     return (
         f"matched_terms={matched_terms}; "
