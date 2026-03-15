@@ -129,10 +129,12 @@ class ArtifactToolsTests(unittest.TestCase):
             model="gpt-5.4",
             agent="memory",
         )
-        with contextlib.redirect_stdout(io.StringIO()):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
             result = handle_ask(args)
 
         self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
         artifact = self._latest_chat_artifact()
 
         self.assertEqual(artifact["content"]["artifact_kind"], "question_answer")
@@ -162,6 +164,13 @@ class ArtifactToolsTests(unittest.TestCase):
                 "relevant_capture, thread_state_citation",
             },
         )
+        self.assertIn(f"artifact_id: {artifact['id']}", rendered)
+        self.assertIn(
+            f"supporting_capture_ids: {receipt_note.id}, {tax_note.id}",
+            rendered,
+        )
+        self.assertIn(f"relevant_thread_ids: {thread_id}", rendered)
+        self.assertIn("used_recent_fallback: false", rendered)
 
     def test_handle_ask_records_ai_request_metadata_separately_from_context_packet(self) -> None:
         insert_capture(
@@ -178,6 +187,7 @@ class ArtifactToolsTests(unittest.TestCase):
             agent="memory",
         )
 
+        stdout = io.StringIO()
         with (
             patch("mneme.cli.provider_ready", return_value=(True, None)),
             patch(
@@ -190,11 +200,12 @@ class ArtifactToolsTests(unittest.TestCase):
                     request_id="req_123",
                 ),
             ),
-            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stdout(stdout),
         ):
             result = handle_ask(args)
 
         self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
         artifact = self._latest_chat_artifact()
 
         self.assertEqual(artifact["model"], "gpt-5.4")
@@ -202,6 +213,37 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertEqual(artifact["content"]["response"]["agent"], "memory")
         self.assertEqual(artifact["content"]["response"]["request_id"], "req_123")
         self.assertNotIn("request_id", artifact["content"]["context_packet"])
+        self.assertIn("Answer", rendered)
+        self.assertIn(f"artifact_id: {artifact['id']}", rendered)
+        self.assertIn("used_recent_fallback: false", rendered)
+
+    def test_handle_ask_footer_reports_recent_fallback_when_no_matches_exist(self) -> None:
+        recent = insert_capture(
+            self.conn,
+            raw_text="Need to buy groceries and refill soap.",
+            domains=["Home"],
+        )
+        args = argparse.Namespace(
+            db=self.db_path,
+            question="Meditation retreat planning",
+            local_only=True,
+            provider="openai",
+            model="gpt-5.4",
+            agent="memory",
+        )
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result = handle_ask(args)
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        artifact = self._latest_chat_artifact()
+
+        self.assertIn(f"artifact_id: {artifact['id']}", rendered)
+        self.assertIn(f"supporting_capture_ids: {recent.id}", rendered)
+        self.assertIn("used_recent_fallback: true", rendered)
+        self.assertNotIn("relevant_thread_ids:", rendered)
 
     def _latest_chat_artifact(self) -> dict[str, object]:
         rows = list_artifacts_tool(self.conn, artifact_type="chat_turn", limit=10)
