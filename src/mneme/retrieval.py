@@ -161,10 +161,11 @@ def _rank_relevant_captures(
         thread_matched_terms = [
             term for term in query_terms if term in thread_support["matched_terms"] and term not in matched_terms
         ]
-        if matched_terms or thread_matched_terms:
+        combined_matched_terms = [term for term in query_terms if term in {*matched_terms, *thread_matched_terms}]
+        if combined_matched_terms:
             scored.append(
                 (
-                    len(matched_terms) + min(1, len(thread_matched_terms)),
+                    len(combined_matched_terms),
                     len(matched_terms),
                     len(thread_matched_terms),
                     row["created_at"],
@@ -229,7 +230,8 @@ def _rank_relevant_threads(conn: Any, *, query_terms: list[str]) -> list[dict[st
         scored.append(
             (
                 (
-                    len(surface_matches) + len(state_matches) + min(1, len(evidence_matches)),
+                    len(matched_terms),
+                    len(surface_matches) + len(state_matches),
                     len(state_matches),
                     len(surface_matches),
                     len(evidence_matches),
