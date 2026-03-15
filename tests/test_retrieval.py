@@ -110,6 +110,86 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(packet["relevant_captures"][0]["matched_terms"], [])
         self.assertEqual(packet["threads"], [])
 
+    def test_context_packet_ranks_threads_by_current_state_terms(self) -> None:
+        stalled_capture = insert_capture(
+            self.conn,
+            raw_text="Tax filing is still waiting on missing receipts.",
+            domains=["Money"],
+        )
+        winning_thread_id = create_thread(
+            self.conn,
+            title="Finish filing",
+            kind="obligation",
+            summary="Close out the filing workflow.",
+            domains=["Money"],
+            evidence_ids=[stalled_capture.id],
+            salience=0.4,
+        )
+        record_thread_state(
+            self.conn,
+            thread_id=winning_thread_id,
+            attention="active",
+            pressure="high",
+            posture="blocked",
+            momentum="stable",
+            affect="draining",
+            horizon="now",
+            evidence_ids=[stalled_capture.id],
+        )
+
+        other_capture = insert_capture(
+            self.conn,
+            raw_text="Kitchen supplies need to be restocked soon.",
+            domains=["Home"],
+        )
+        create_thread(
+            self.conn,
+            title="Restock kitchen",
+            kind="obligation",
+            summary="Buy missing supplies.",
+            domains=["Home"],
+            evidence_ids=[other_capture.id],
+            salience=0.9,
+        )
+
+        packet = build_context_packet(self.conn, "What is blocked right now?", days=30)
+
+        self.assertEqual(packet["threads"][0]["id"], winning_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["blocked", "now"])
+        rendered = render_context_packet(packet)
+        self.assertIn("matched: blocked, now", rendered)
+        self.assertIn("posture=blocked", rendered)
+
+    def test_context_packet_ranks_threads_by_thread_status(self) -> None:
+        capture = insert_capture(
+            self.conn,
+            raw_text="The passport renewal can wait until summer.",
+            domains=["Home"],
+        )
+        dormant_thread_id = create_thread(
+            self.conn,
+            title="Renew passport",
+            kind="obligation",
+            summary="Handle passport renewal later.",
+            domains=["Home"],
+            status="dormant",
+            evidence_ids=[capture.id],
+            salience=0.3,
+        )
+        create_thread(
+            self.conn,
+            title="Book travel",
+            kind="obligation",
+            summary="Choose flights for the trip.",
+            domains=["Home"],
+            salience=0.8,
+        )
+
+        packet = build_context_packet(self.conn, "What is dormant?", days=30)
+
+        self.assertEqual(packet["threads"][0]["id"], dormant_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["dormant"])
+
 
 if __name__ == "__main__":
     unittest.main()

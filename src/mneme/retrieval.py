@@ -184,22 +184,29 @@ def _rank_relevant_threads(conn: Any, *, query_terms: list[str]) -> list[dict[st
     scored: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
     for thread in list_threads(conn, limit=12):
         bundle = get_thread_bundle(conn, thread["id"])
+        current_state = _serialize_current_state(bundle.get("current_state"))
         surface_matches = _matched_terms(
             query_terms,
             thread["title"],
             thread.get("canonical_summary", ""),
             thread.get("domains", ""),
         )
+        state_matches = _matched_terms(
+            query_terms,
+            thread["status"],
+            *(_thread_state_terms(current_state) if current_state is not None else ()),
+        )
         citations = _select_thread_citations(bundle, query_terms=query_terms)
         evidence_matches = sorted({term for row in citations for term in row["matched_terms"]})
-        if not surface_matches and not evidence_matches:
+        if not surface_matches and not state_matches and not evidence_matches:
             continue
-        matched_term_set = {*surface_matches, *evidence_matches}
+        matched_term_set = {*surface_matches, *state_matches, *evidence_matches}
         matched_terms = [term for term in query_terms if term in matched_term_set]
         scored.append(
             (
                 (
-                    len(surface_matches) + min(1, len(evidence_matches)),
+                    len(surface_matches) + len(state_matches) + min(1, len(evidence_matches)),
+                    len(state_matches),
                     len(surface_matches),
                     len(evidence_matches),
                     float(thread["salience"]),
@@ -217,7 +224,7 @@ def _rank_relevant_threads(conn: Any, *, query_terms: list[str]) -> list[dict[st
                     "domains": thread.get("domains") or "",
                     "summary": thread.get("canonical_summary") or "",
                     "matched_terms": matched_terms,
-                    "current_state": _serialize_current_state(bundle.get("current_state")),
+                    "current_state": current_state,
                     "citations": citations,
                 },
             )
@@ -278,6 +285,17 @@ def _serialize_current_state(row: dict[str, Any] | None) -> dict[str, Any] | Non
         "horizon": row["horizon"],
         "confidence": row["confidence"],
     }
+
+
+def _thread_state_terms(current_state: dict[str, Any]) -> tuple[str, ...]:
+    return (
+        current_state["attention"],
+        current_state["pressure"],
+        current_state["posture"],
+        current_state["momentum"],
+        current_state["affect"],
+        current_state["horizon"],
+    )
 
 
 def _render_thread(row: dict[str, Any]) -> list[str]:
