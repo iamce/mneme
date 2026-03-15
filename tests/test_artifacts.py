@@ -194,6 +194,16 @@ class ArtifactToolsTests(unittest.TestCase):
         )
         self.assertIn(f"relevant_thread_ids: {thread_id}", rendered)
         self.assertIn("used_recent_fallback: false", rendered)
+        self.assertIn(
+            f"top_capture_ranking: {receipt_note.id} | matched_terms=tax, receipt; direct=2; "
+            "thread_support=0",
+            rendered,
+        )
+        self.assertIn(
+            f"top_thread_ranking: {thread_id} | matched_terms=tax, receipt; surface=2; "
+            "state=0; evidence=2",
+            rendered,
+        )
         self.assertNotIn("cited_capture_ids:", rendered)
 
     def test_handle_ask_records_ai_request_metadata_separately_from_context_packet(self) -> None:
@@ -286,6 +296,16 @@ class ArtifactToolsTests(unittest.TestCase):
             rendered,
         )
         self.assertIn("Still missing tax receipts for filing.", rendered)
+        self.assertIn(
+            f"top_capture_ranking: {receipt_note.id} | matched_terms=tax, receipt; direct=2; "
+            "thread_support=0",
+            rendered,
+        )
+        self.assertIn(
+            f"top_thread_ranking: {thread_id} | matched_terms=tax, receipt; surface=2; "
+            "state=0; evidence=2",
+            rendered,
+        )
         self.assertIn(f"cited_capture_ids: {receipt_note.id}", rendered)
         self.assertIn("citation_check: ok", rendered)
         self.assertIn(f"cited_thread_ids: {thread_id}", rendered)
@@ -387,6 +407,11 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertIn(f"artifact_id: {artifact['id']}", rendered)
         self.assertIn(f"supporting_capture_ids: {recent.id}", rendered)
         self.assertIn("used_recent_fallback: true", rendered)
+        self.assertIn(
+            f"top_capture_ranking: {recent.id} | fallback=recent",
+            rendered,
+        )
+        self.assertNotIn("top_thread_ranking:", rendered)
         self.assertNotIn("relevant_thread_ids:", rendered)
 
     def _latest_chat_artifact(self) -> dict[str, object]:

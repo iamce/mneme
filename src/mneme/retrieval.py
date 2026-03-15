@@ -115,6 +115,25 @@ def render_context_packet(context_packet: dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
+def render_ranking_highlights(context_packet: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    capture = _top_ranked_row(context_packet.get("relevant_captures", []))
+    if capture is not None:
+        lines.append(
+            "top_capture_ranking: "
+            f"{capture['id']} | {_render_capture_ranking_reason(capture['ranking_reason'])}"
+        )
+
+    thread = _top_ranked_row(context_packet.get("threads", []))
+    if thread is not None:
+        lines.append(
+            "top_thread_ranking: "
+            f"{thread['id']} | {_render_thread_ranking_reason(thread['ranking_reason'])}"
+        )
+
+    return lines
+
+
 def render_capture(row: Any) -> str:
     payload = dict(row)
     domains = payload["domains"] or "none"
@@ -446,6 +465,13 @@ def _normalize_token(token: str) -> str:
     if len(token) > 4 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
         return token[:-1]
     return token
+
+
+def _top_ranked_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for row in rows:
+        if row.get("ranking_reason"):
+            return row
+    return None
 
 
 def _render_capture_ranking_reason(reason: dict[str, Any]) -> str:

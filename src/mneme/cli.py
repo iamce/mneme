@@ -31,6 +31,7 @@ from .tools import (
     render_context_packet,
     run_triggered_consolidation_tool,
 )
+from .retrieval import render_ranking_highlights
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -209,6 +210,7 @@ def handle_ask(args: argparse.Namespace) -> int:
     print(
         _render_ask_footer(
             artifact_id=artifact_id,
+            context_packet=context_packet,
             retrieval_summary=retrieval_summary,
             citation_summary=citation_summary,
         )
@@ -219,6 +221,7 @@ def handle_ask(args: argparse.Namespace) -> int:
 def _render_ask_footer(
     *,
     artifact_id: str,
+    context_packet: dict[str, Any],
     retrieval_summary: dict[str, Any],
     citation_summary: dict[str, Any],
 ) -> str:
@@ -240,6 +243,7 @@ def _render_ask_footer(
         "used_recent_fallback: "
         + ("true" if retrieval_summary.get("used_recent_fallback") else "false")
     )
+    lines.extend(render_ranking_highlights(context_packet))
     if citation_summary.get("status") != "not_applicable":
         lines.append(
             "cited_capture_ids: "
