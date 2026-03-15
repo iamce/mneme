@@ -178,10 +178,35 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertNotIn("cited_capture_ids:", rendered)
 
     def test_handle_ask_records_ai_request_metadata_separately_from_context_packet(self) -> None:
-        capture = insert_capture(
+        tax_note = insert_capture(
+            self.conn,
+            raw_text="Taxes are overdue and I need to file them this weekend.",
+            domains=["Money"],
+        )
+        receipt_note = insert_capture(
             self.conn,
             raw_text="Still missing tax receipts for filing.",
             domains=["Money"],
+        )
+        thread_id = create_thread(
+            self.conn,
+            title="File overdue taxes",
+            kind="obligation",
+            summary="Finish tax filing and gather missing receipts.",
+            domains=["Money"],
+            evidence_ids=[tax_note.id],
+            salience=0.9,
+        )
+        state_id = record_thread_state(
+            self.conn,
+            thread_id=thread_id,
+            attention="active",
+            pressure="high",
+            posture="blocked",
+            momentum="stable",
+            affect="draining",
+            horizon="now",
+            evidence_ids=[receipt_note.id],
         )
         args = argparse.Namespace(
             db=self.db_path,
@@ -202,7 +227,7 @@ class ArtifactToolsTests(unittest.TestCase):
                         "Answer\nThe latest missing receipt is still unresolved.\n\n"
                         "Observations\n- Receipt tracking is incomplete.\n\n"
                         "Uncertainties\n- None.\n\n"
-                        f"Citations\n- {capture.id}"
+                        f"Citations\n- {receipt_note.id}"
                     ),
                     provider="openai",
                     agent="memory",
@@ -227,16 +252,20 @@ class ArtifactToolsTests(unittest.TestCase):
             artifact["content"]["response"]["citation_check"],
             {
                 "status": "ok",
-                "cited_capture_ids": [capture.id],
-                "supported_capture_ids": [capture.id],
+                "cited_capture_ids": [receipt_note.id],
+                "supported_capture_ids": [receipt_note.id],
                 "unsupported_capture_ids": [],
+                "cited_thread_ids": [thread_id],
+                "cited_state_ids": [state_id],
             },
         )
         self.assertIn("Answer", rendered)
         self.assertIn(f"artifact_id: {artifact['id']}", rendered)
         self.assertIn("used_recent_fallback: false", rendered)
-        self.assertIn(f"cited_capture_ids: {capture.id}", rendered)
+        self.assertIn(f"cited_capture_ids: {receipt_note.id}", rendered)
         self.assertIn("citation_check: ok", rendered)
+        self.assertIn(f"cited_thread_ids: {thread_id}", rendered)
+        self.assertIn(f"cited_state_ids: {state_id}", rendered)
 
     def test_handle_ask_flags_unsupported_ai_citations(self) -> None:
         supported = insert_capture(
@@ -287,6 +316,8 @@ class ArtifactToolsTests(unittest.TestCase):
                 "cited_capture_ids": [supported.id, unsupported_capture_id],
                 "supported_capture_ids": [supported.id],
                 "unsupported_capture_ids": [unsupported_capture_id],
+                "cited_thread_ids": [],
+                "cited_state_ids": [],
             },
         )
         self.assertIn(

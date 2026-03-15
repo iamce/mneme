@@ -329,6 +329,8 @@ def summarize_answer_citations(
             "cited_capture_ids": [],
             "supported_capture_ids": [],
             "unsupported_capture_ids": [],
+            "cited_thread_ids": [],
+            "cited_state_ids": [],
         }
 
     cited_capture_ids = _ordered_unique(CAPTURE_ID_PATTERN.findall(text_output))
@@ -339,6 +341,20 @@ def summarize_answer_citations(
     unsupported_capture_ids = [
         capture_id for capture_id in cited_capture_ids if capture_id not in expected_capture_id_set
     ]
+    cited_thread_ids = _ordered_unique(
+        [
+            row["thread_id"]
+            for row in retrieval_summary.get("thread_citations", [])
+            if row["capture_id"] in supported_capture_ids
+        ]
+    )
+    cited_state_ids = _ordered_unique(
+        [
+            row["state_id"]
+            for row in retrieval_summary.get("thread_citations", [])
+            if row["capture_id"] in supported_capture_ids and row.get("state_id")
+        ]
+    )
 
     status = "ok"
     if unsupported_capture_ids:
@@ -351,6 +367,8 @@ def summarize_answer_citations(
         "cited_capture_ids": cited_capture_ids,
         "supported_capture_ids": supported_capture_ids,
         "unsupported_capture_ids": unsupported_capture_ids,
+        "cited_thread_ids": cited_thread_ids,
+        "cited_state_ids": cited_state_ids,
     }
 
 
