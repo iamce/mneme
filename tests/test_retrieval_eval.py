@@ -43,7 +43,7 @@ class RetrievalEvalTests(unittest.TestCase):
             self.assertIn(f"- {case_name}: ok", rendered)
         self.assertIn("known gap: paraphrase", rendered)
         self.assertIn("known gap: synonym", rendered)
-        self.assertIn("known gap: alias", rendered)
+        self.assertNotIn("known gap: alias", rendered)
 
 
 if __name__ == "__main__":

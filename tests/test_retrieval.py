@@ -289,6 +289,76 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(packet["threads"][0]["matched_terms"], ["tax", "receipt"])
         self.assertEqual(packet["threads"][1]["id"], partial_thread_id)
 
+    def test_context_packet_matches_name_aliases_with_expanded_ranking_reason(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Drop off the mail on the way home.",
+            domains=["Home"],
+        )
+        robert_capture = insert_capture(
+            self.conn,
+            raw_text="Need to pay Robert back for concert tickets.",
+            domains=["Social"],
+        )
+        self.conn.execute(
+            "UPDATE captures SET created_at = datetime('now', '-45 days') WHERE id = ?",
+            (robert_capture.id,),
+        )
+
+        robert_thread_id = create_thread(
+            self.conn,
+            title="Pay Robert back",
+            kind="obligation",
+            summary="Settle the concert ticket reimbursement.",
+            domains=["Social"],
+            evidence_ids=[robert_capture.id],
+            salience=0.6,
+        )
+        self.conn.execute(
+            "UPDATE threads SET last_seen_at = datetime('now', '-45 days') WHERE id = ?",
+            (robert_thread_id,),
+        )
+        self.conn.commit()
+
+        packet = build_context_packet(self.conn, "What do I owe Bob?", days=30)
+
+        self.assertEqual(packet["query_terms"], ["owe", "bob"])
+        self.assertFalse(packet["used_recent_fallback"])
+        self.assertEqual(packet["relevant_captures"][0]["id"], robert_capture.id)
+        self.assertEqual(packet["relevant_captures"][0]["matched_terms"], ["bob"])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 1,
+                "direct_match_count": 1,
+                "thread_support_count": 0,
+                "matched_terms": ["bob"],
+                "expanded_matches": ["bob->robert"],
+            },
+        )
+
+        self.assertEqual(packet["threads"][0]["id"], robert_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["bob"])
+        self.assertEqual(
+            packet["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 1,
+                "surface_match_count": 1,
+                "state_match_count": 0,
+                "evidence_match_count": 1,
+                "matched_terms": ["bob"],
+                "expanded_matches": ["bob->robert"],
+            },
+        )
+        self.assertEqual(
+            packet["threads"][0]["citations"][0]["expanded_matches"],
+            ["bob->robert"],
+        )
+
+        rendered = render_context_packet(packet)
+        self.assertIn("expanded=bob->robert", rendered)
+        self.assertIn("| matched: bob | expanded: bob->robert", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
