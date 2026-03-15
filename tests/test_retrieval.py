@@ -359,6 +359,79 @@ class RetrievalTests(unittest.TestCase):
         self.assertIn("expanded=bob->robert", rendered)
         self.assertIn("| matched: bob | expanded: bob->robert", rendered)
 
+    def test_context_packet_matches_synonyms_with_expanded_ranking_reason(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Replace the kitchen light bulb.",
+            domains=["Home"],
+        )
+        doctor_capture = insert_capture(
+            self.conn,
+            raw_text="Need to schedule a doctor appointment before June.",
+            domains=["Body"],
+        )
+        self.conn.execute(
+            "UPDATE captures SET created_at = datetime('now', '-45 days') WHERE id = ?",
+            (doctor_capture.id,),
+        )
+
+        doctor_thread_id = create_thread(
+            self.conn,
+            title="Schedule doctor appointment",
+            kind="obligation",
+            summary="Book the annual doctor visit.",
+            domains=["Body"],
+            evidence_ids=[doctor_capture.id],
+            salience=0.7,
+        )
+        self.conn.execute(
+            "UPDATE threads SET last_seen_at = datetime('now', '-45 days') WHERE id = ?",
+            (doctor_thread_id,),
+        )
+        self.conn.commit()
+
+        packet = build_context_packet(self.conn, "What about my physician checkup?", days=30)
+
+        self.assertEqual(packet["query_terms"], ["physician", "checkup"])
+        self.assertFalse(packet["used_recent_fallback"])
+        self.assertEqual(packet["relevant_captures"][0]["id"], doctor_capture.id)
+        self.assertEqual(packet["relevant_captures"][0]["matched_terms"], ["physician", "checkup"])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "direct_match_count": 2,
+                "thread_support_count": 0,
+                "matched_terms": ["physician", "checkup"],
+                "expanded_matches": ["physician->doctor", "checkup->appointment"],
+            },
+        )
+
+        self.assertEqual(packet["threads"][0]["id"], doctor_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["physician", "checkup"])
+        self.assertEqual(
+            packet["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "surface_match_count": 2,
+                "state_match_count": 0,
+                "evidence_match_count": 2,
+                "matched_terms": ["physician", "checkup"],
+                "expanded_matches": ["physician->doctor", "checkup->appointment"],
+            },
+        )
+        self.assertEqual(
+            packet["threads"][0]["citations"][0]["expanded_matches"],
+            ["physician->doctor", "checkup->appointment"],
+        )
+
+        rendered = render_context_packet(packet)
+        self.assertIn("expanded=physician->doctor, checkup->appointment", rendered)
+        self.assertIn(
+            "| matched: physician, checkup | expanded: physician->doctor, checkup->appointment",
+            rendered,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

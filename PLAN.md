@@ -21,6 +21,7 @@ Keep it operational. Keep it short. Update it as work moves.
 - Phase 3 is now framed to start with wording-mismatch recall under eval-first guardrails.
 - The built-in retrieval eval corpus now includes wording-gap cases for paraphrase, synonym, and alias mismatches.
 - Alias-style wording mismatches now improve deterministically via nickname expansion with inspectable ranking output.
+- Synonym-style wording mismatches now improve deterministically for the physician/checkup retrieval case.
 
 ## Recently Completed
 
@@ -32,10 +33,11 @@ Keep it operational. Keep it short. Update it as work moves.
 - the first concrete Phase 3 problem was chosen: wording-mismatch recall
 - Phase 3 Chunk 1 landed locally: wording-mismatch eval coverage for paraphrase, synonym, and alias gaps
 - Phase 3 Chunk 2 landed locally: alias-style wording mismatch retrieval now passes as a fixed regression case
+- Phase 3 Chunk 3 landed locally: synonym-style wording mismatch retrieval now passes as a fixed regression case
 
 ## Current Objective
 
-Keep the deterministic retrieval baseline stable while using the remaining wording-gap eval cases to drive the next retrieval-side improvement.
+Keep the deterministic retrieval baseline stable while using the remaining paraphrase wording-gap case to drive the next retrieval-side improvement.
 
 ## Active Tracks
 
@@ -130,12 +132,35 @@ Completed scope:
 Recommendation:
 - highest-priority next chunk
 
+Status:
+- Complete
+
+Completed focus:
+
+- deterministic synonym expansion for the physician/checkup wording-gap case
+
 Definition of done:
 
 - improve either the paraphrase or synonym wording-gap case against the eval corpus
 - keep alias coverage and existing non-wording regressions green
 - keep ranking reasons and citation support inspectable
-### C. Retrieval Eval Ergonomics
+
+Completed scope:
+
+- deterministic synonym expansion now covers physician/doctor and checkup/appointment-style retrieval matches
+- synonym matches remain inspectable in ranking reasons and thread citation output
+
+### C. Phase 3 Chunk 4: Paraphrase Candidate Expansion
+
+Recommendation:
+- highest-priority next chunk
+
+Definition of done:
+
+- improve the remaining paraphrase wording-gap case against the eval corpus
+- keep alias and synonym coverage plus the existing non-wording regressions green
+- keep ranking reasons and citation support inspectable
+### D. Retrieval Eval Ergonomics
 
 Use this if:
 - the corpus grows enough that review output becomes noisy or hard to diff
@@ -144,7 +169,7 @@ Definition of done:
 
 - clearer eval output shape without changing retrieval behavior
 
-### D. Operator Ergonomics Follow-Up
+### E. Operator Ergonomics Follow-Up
 
 Use this if:
 - product priority is smoother real-world operation rather than wider retrieval behavior
