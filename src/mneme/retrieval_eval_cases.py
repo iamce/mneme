@@ -466,14 +466,12 @@ def built_in_retrieval_eval_cases() -> tuple[RetrievalEvalCase, ...]:
                     age_minutes=40,
                 ),
             ),
-            expected_relevant_capture_refs=("recent_distractor", "vehicle_capture"),
-            expected_thread_refs=(),
-            used_recent_fallback=True,
-            known_gap=KnownRetrievalGap(
-                label="paraphrase",
-                target_relevant_capture_refs=("vehicle_capture",),
-                target_thread_refs=("vehicle_thread",),
-                target_used_recent_fallback=False,
+            expected_relevant_capture_refs=("vehicle_capture",),
+            expected_thread_refs=("vehicle_thread",),
+            used_recent_fallback=False,
+            citation=CitationExpectation(
+                ai_cited_capture_refs=("vehicle_capture",),
+                cited_thread_refs=("vehicle_thread",),
             ),
         ),
         RetrievalEvalCase(

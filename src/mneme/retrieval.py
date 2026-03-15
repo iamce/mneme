@@ -33,12 +33,16 @@ STOPWORDS = {
 QUERY_TERM_EQUIVALENTS = {
     "bob": ("robert", "bobby"),
     "bobby": ("bob", "robert"),
+    "car": ("vehicle",),
     "checkup": ("appointment", "visit"),
     "doctor": ("physician",),
+    "paper": ("registration", "paperwork"),
     "physician": ("doctor",),
     "robert": ("bob", "bobby"),
     "visit": ("appointment", "checkup"),
+    "vehicle": ("car",),
     "appointment": ("visit", "checkup"),
+    "registration": ("paper", "paperwork"),
 }
 
 

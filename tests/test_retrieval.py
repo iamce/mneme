@@ -432,6 +432,79 @@ class RetrievalTests(unittest.TestCase):
             rendered,
         )
 
+    def test_context_packet_matches_paraphrases_with_expanded_ranking_reason(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Need to buy groceries after work.",
+            domains=["Home"],
+        )
+        vehicle_capture = insert_capture(
+            self.conn,
+            raw_text="Need to renew vehicle registration before July.",
+            domains=["Home"],
+        )
+        self.conn.execute(
+            "UPDATE captures SET created_at = datetime('now', '-45 days') WHERE id = ?",
+            (vehicle_capture.id,),
+        )
+
+        vehicle_thread_id = create_thread(
+            self.conn,
+            title="Renew vehicle registration",
+            kind="obligation",
+            summary="Handle the registration renewal paperwork.",
+            domains=["Home"],
+            evidence_ids=[vehicle_capture.id],
+            salience=0.8,
+        )
+        self.conn.execute(
+            "UPDATE threads SET last_seen_at = datetime('now', '-45 days') WHERE id = ?",
+            (vehicle_thread_id,),
+        )
+        self.conn.commit()
+
+        packet = build_context_packet(self.conn, "What about my car papers?", days=30)
+
+        self.assertEqual(packet["query_terms"], ["car", "paper"])
+        self.assertFalse(packet["used_recent_fallback"])
+        self.assertEqual(packet["relevant_captures"][0]["id"], vehicle_capture.id)
+        self.assertEqual(packet["relevant_captures"][0]["matched_terms"], ["car", "paper"])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "direct_match_count": 2,
+                "thread_support_count": 0,
+                "matched_terms": ["car", "paper"],
+                "expanded_matches": ["car->vehicle", "paper->registration"],
+            },
+        )
+
+        self.assertEqual(packet["threads"][0]["id"], vehicle_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["car", "paper"])
+        self.assertEqual(
+            packet["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 2,
+                "surface_match_count": 2,
+                "state_match_count": 0,
+                "evidence_match_count": 2,
+                "matched_terms": ["car", "paper"],
+                "expanded_matches": ["car->vehicle", "paper->registration"],
+            },
+        )
+        self.assertEqual(
+            packet["threads"][0]["citations"][0]["expanded_matches"],
+            ["car->vehicle", "paper->registration"],
+        )
+
+        rendered = render_context_packet(packet)
+        self.assertIn("expanded=car->vehicle, paper->registration", rendered)
+        self.assertIn(
+            "| matched: car, paper | expanded: car->vehicle, paper->registration",
+            rendered,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
