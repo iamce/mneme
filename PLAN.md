@@ -19,10 +19,11 @@ Keep it operational. Keep it short. Update it as work moves.
 - The deterministic retrieval baseline is in place and protected by `mneme eval-retrieval` and `make eval`.
 - The built-in retrieval eval corpus was recently expanded with ranking, citation-shape, and tie-break regression cases.
 - Phase 3 is now framed to start with wording-mismatch recall under eval-first guardrails.
-- The built-in retrieval eval corpus now includes wording-gap cases for paraphrase, synonym, and alias mismatches.
+- The built-in retrieval eval corpus now includes wording-gap cases for paraphrase, synonym, alias, and cross-domain phrasing-shift mismatches.
 - Alias-style wording mismatches now improve deterministically via nickname expansion with inspectable ranking output.
 - Synonym-style wording mismatches now improve deterministically for the physician/checkup retrieval case.
 - Paraphrase-style wording mismatches now improve deterministically for the car-papers and vehicle-registration retrieval case.
+- Cross-domain reimbursement-versus-expense-report phrasing is now captured as the next fixed known gap before retrieval behavior changes.
 
 ## Recently Completed
 
@@ -36,10 +37,11 @@ Keep it operational. Keep it short. Update it as work moves.
 - Phase 3 Chunk 2 landed locally: alias-style wording mismatch retrieval now passes as a fixed regression case
 - Phase 3 Chunk 3 landed locally: synonym-style wording mismatch retrieval now passes as a fixed regression case
 - Phase 3 Chunk 4 landed locally: paraphrase-style wording mismatch retrieval now passes as a fixed regression case
+- Phase 3 Chunk 5 landed locally: cross-domain phrasing-shift eval coverage now captures the reimbursement/expense-report gap
 
 ## Current Objective
 
-Keep the deterministic retrieval baseline stable while choosing the next measured recall gap beyond the initial alias, synonym, and paraphrase set.
+Keep the deterministic retrieval baseline stable while implementing the next measured recall gap beyond the initial alias, synonym, and paraphrase set.
 
 ## Active Tracks
 
@@ -175,16 +177,37 @@ Completed scope:
 - deterministic paraphrase expansion now covers the car-papers and vehicle-registration retrieval case
 - paraphrase matches remain inspectable in ranking reasons and thread citation output
 
-### D. Next Phase 3 Recall Slice
+### D. Phase 3 Chunk 5: Cross-Domain Eval Coverage
 
-Use this if:
-- a new wording-mismatch class is chosen from real misses or a broader semantic need becomes concrete
+Recommendation:
+- highest-priority next chunk
+
+Status:
+- Complete
+
+Completed focus:
+
+- add eval-first coverage for the reimbursement-versus-expense-report cross-domain phrasing shift
 
 Definition of done:
 
 - the next recall gap is defined with fixed eval coverage before behavior changes
 
-### E. Retrieval Eval Ergonomics
+Completed scope:
+
+- built-in retrieval eval coverage now includes a passing known-gap case for a reimbursement-style query that should eventually retrieve the expense-report thread
+- the current deterministic baseline remains visible while the future retrieval target is explicit
+
+### E. Next Phase 3 Recall Slice
+
+Use this if:
+- the chosen cross-domain phrasing-shift gap is ready for retrieval behavior changes
+
+Definition of done:
+
+- the chosen cross-domain phrasing-shift case is promoted from known gap to fixed regression expectation
+
+### F. Retrieval Eval Ergonomics
 
 Use this if:
 - the corpus grows enough that review output becomes noisy or hard to diff
@@ -193,7 +216,7 @@ Definition of done:
 
 - clearer eval output shape without changing retrieval behavior
 
-### F. Operator Ergonomics Follow-Up
+### G. Operator Ergonomics Follow-Up
 
 Use this if:
 - product priority is smoother real-world operation rather than wider retrieval behavior
