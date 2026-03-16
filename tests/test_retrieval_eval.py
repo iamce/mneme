@@ -41,6 +41,7 @@ class RetrievalEvalTests(unittest.TestCase):
         self.assertIn("failed: 0", rendered)
         for case_name in case_names:
             self.assertIn(f"- {case_name}: ok", rendered)
+        self.assertIn("known gap: cross-domain phrasing shift", rendered)
         self.assertNotIn("known gap: paraphrase", rendered)
         self.assertNotIn("known gap: synonym", rendered)
         self.assertNotIn("known gap: alias", rendered)

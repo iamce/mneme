@@ -548,4 +548,43 @@ def built_in_retrieval_eval_cases() -> tuple[RetrievalEvalCase, ...]:
                 cited_thread_refs=("robert_thread",),
             ),
         ),
+        RetrievalEvalCase(
+            name="wording_gap_cross_domain_reimbursement_expense_report",
+            question="What do I need to get reimbursed?",
+            captures=(
+                CaptureSeed(
+                    ref="recent_distractor",
+                    raw_text="Pick up dry cleaning before dinner.",
+                    domains=("Home",),
+                    age_minutes=3,
+                ),
+                CaptureSeed(
+                    ref="expense_capture",
+                    raw_text="Submit expense report for hotel receipt.",
+                    domains=("Work",),
+                    age_minutes=35,
+                ),
+            ),
+            threads=(
+                ThreadSeed(
+                    ref="expense_thread",
+                    title="File expense report",
+                    kind="obligation",
+                    summary="Submit the reimbursement paperwork for the hotel stay.",
+                    domains=("Work",),
+                    salience=0.75,
+                    evidence_capture_refs=("expense_capture",),
+                    age_minutes=35,
+                ),
+            ),
+            expected_relevant_capture_refs=("recent_distractor", "expense_capture"),
+            expected_thread_refs=(),
+            used_recent_fallback=True,
+            known_gap=KnownRetrievalGap(
+                label="cross-domain phrasing shift",
+                target_relevant_capture_refs=("expense_capture",),
+                target_thread_refs=("expense_thread",),
+                target_used_recent_fallback=False,
+            ),
+        ),
     )
