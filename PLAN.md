@@ -23,7 +23,7 @@ Keep it operational. Keep it short. Update it as work moves.
 - Alias-style wording mismatches now improve deterministically via nickname expansion with inspectable ranking output.
 - Synonym-style wording mismatches now improve deterministically for the physician/checkup retrieval case.
 - Paraphrase-style wording mismatches now improve deterministically for the car-papers and vehicle-registration retrieval case.
-- Cross-domain reimbursement-versus-expense-report phrasing is now captured as the next fixed known gap before retrieval behavior changes.
+- Cross-domain reimbursement-versus-expense-report phrasing now improves deterministically with inspectable ranking output.
 
 ## Recently Completed
 
@@ -38,10 +38,11 @@ Keep it operational. Keep it short. Update it as work moves.
 - Phase 3 Chunk 3 landed locally: synonym-style wording mismatch retrieval now passes as a fixed regression case
 - Phase 3 Chunk 4 landed locally: paraphrase-style wording mismatch retrieval now passes as a fixed regression case
 - Phase 3 Chunk 5 landed locally: cross-domain phrasing-shift eval coverage now captures the reimbursement/expense-report gap
+- Phase 3 Chunk 6 landed locally: cross-domain reimbursement/expense-report retrieval now passes as a fixed regression case
 
 ## Current Objective
 
-Keep the deterministic retrieval baseline stable while implementing the next measured recall gap beyond the initial alias, synonym, and paraphrase set.
+Keep the deterministic retrieval baseline stable while choosing the next measured recall gap beyond the initial alias, synonym, paraphrase, and cross-domain set.
 
 ## Active Tracks
 
@@ -198,16 +199,37 @@ Completed scope:
 - built-in retrieval eval coverage now includes a passing known-gap case for a reimbursement-style query that should eventually retrieve the expense-report thread
 - the current deterministic baseline remains visible while the future retrieval target is explicit
 
-### E. Next Phase 3 Recall Slice
+### E. Phase 3 Chunk 6: Cross-Domain Candidate Expansion
 
-Use this if:
-- the chosen cross-domain phrasing-shift gap is ready for retrieval behavior changes
+Recommendation:
+- highest-priority next chunk
+
+Status:
+- Complete
+
+Completed focus:
+
+- deterministic cross-domain expansion for the reimbursement-versus-expense-report wording-gap case
 
 Definition of done:
 
 - the chosen cross-domain phrasing-shift case is promoted from known gap to fixed regression expectation
 
-### F. Retrieval Eval Ergonomics
+Completed scope:
+
+- deterministic query expansion now covers the reimbursement/expense-report retrieval case
+- cross-domain matches remain inspectable in ranking reasons and thread citation output
+
+### F. Next Phase 3 Recall Slice
+
+Use this if:
+- a new wording-mismatch class is chosen from real misses or a broader semantic need becomes concrete
+
+Definition of done:
+
+- the next recall gap is defined with fixed eval coverage before behavior changes
+
+### G. Retrieval Eval Ergonomics
 
 Use this if:
 - the corpus grows enough that review output becomes noisy or hard to diff
@@ -216,7 +238,7 @@ Definition of done:
 
 - clearer eval output shape without changing retrieval behavior
 
-### G. Operator Ergonomics Follow-Up
+### H. Operator Ergonomics Follow-Up
 
 Use this if:
 - product priority is smoother real-world operation rather than wider retrieval behavior

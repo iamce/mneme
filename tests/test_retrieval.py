@@ -505,6 +505,76 @@ class RetrievalTests(unittest.TestCase):
             rendered,
         )
 
+    def test_context_packet_matches_cross_domain_phrasing_with_expanded_ranking_reason(self) -> None:
+        insert_capture(
+            self.conn,
+            raw_text="Pick up dry cleaning before dinner.",
+            domains=["Home"],
+        )
+        expense_capture = insert_capture(
+            self.conn,
+            raw_text="Submit expense report for hotel receipt.",
+            domains=["Work"],
+        )
+        self.conn.execute(
+            "UPDATE captures SET created_at = datetime('now', '-45 days') WHERE id = ?",
+            (expense_capture.id,),
+        )
+
+        expense_thread_id = create_thread(
+            self.conn,
+            title="File expense report",
+            kind="obligation",
+            summary="Submit the reimbursement paperwork for the hotel stay.",
+            domains=["Work"],
+            evidence_ids=[expense_capture.id],
+            salience=0.75,
+        )
+        self.conn.execute(
+            "UPDATE threads SET last_seen_at = datetime('now', '-45 days') WHERE id = ?",
+            (expense_thread_id,),
+        )
+        self.conn.commit()
+
+        packet = build_context_packet(self.conn, "What do I need to get reimbursed?", days=30)
+
+        self.assertEqual(packet["query_terms"], ["need", "get", "reimbursed"])
+        self.assertFalse(packet["used_recent_fallback"])
+        self.assertEqual(packet["relevant_captures"][0]["id"], expense_capture.id)
+        self.assertEqual(packet["relevant_captures"][0]["matched_terms"], ["reimbursed"])
+        self.assertEqual(
+            packet["relevant_captures"][0]["ranking_reason"],
+            {
+                "matched_term_count": 1,
+                "direct_match_count": 1,
+                "thread_support_count": 0,
+                "matched_terms": ["reimbursed"],
+                "expanded_matches": ["reimbursed->expense"],
+            },
+        )
+
+        self.assertEqual(packet["threads"][0]["id"], expense_thread_id)
+        self.assertEqual(packet["threads"][0]["matched_terms"], ["reimbursed"])
+        self.assertEqual(
+            packet["threads"][0]["ranking_reason"],
+            {
+                "matched_term_count": 1,
+                "surface_match_count": 1,
+                "state_match_count": 0,
+                "evidence_match_count": 1,
+                "matched_terms": ["reimbursed"],
+                "expanded_matches": ["reimbursed->expense"],
+            },
+        )
+        self.assertEqual(
+            packet["threads"][0]["citations"][0]["expanded_matches"],
+            ["reimbursed->expense"],
+        )
+
+        rendered = render_context_packet(packet)
+        self.assertIn("expanded=reimbursed->expense", rendered)
+        self.assertIn("| matched: reimbursed | expanded: reimbursed->expense", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
